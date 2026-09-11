@@ -2,50 +2,49 @@
 
 ## Missao
 
-Projetar, implementar, testar e entregar um motor confiavel de importacao de
-CSV/XLSX com mapeamento inteligente, validacao explicavel e operacao auditavel.
+Projetar e implementar o Rizoma: um motor Java confiavel, inteligente e
+automatizado para importacao de planilhas e CSV.
+
+## Estado inicial
+
+- O produto ainda nao foi implementado.
+- A unica decisao tecnica fechada e a linguagem Java.
+- Java 21 ou superior e uma hipotese forte, nao uma decisao definitiva.
+- Framework, build tool, modulos, interfaces e persistencia devem ser definidos
+  a partir dos requisitos, com justificativas registradas no memory bank.
 
 ## Forma de trabalho
 
-- Continue autonomamente enquanto existir uma proxima acao segura e objetiva.
-- Prefira a menor arquitetura que resolva o requisito atual.
-- Leia `docs/memory-bank/CURRENT.md` e `docs/architecture.md` antes de mudancas relevantes.
-- Investigue o codigo e os testes antes de perguntar algo que possa ser descoberto localmente.
-- Mantenha funcoes pequenas, tipadas, deterministicas e faceis de testar.
-- Separe leitura, inferencia de mapeamento, transformacao, validacao e persistencia.
-- Nao introduza LLM no caminho critico enquanto heuristicas locais resolverem o caso.
-- Nunca envie conteudo importado, credenciais ou dados pessoais a servicos externos sem autorizacao explicita.
-- Nao use comandos destrutivos, force-push nem reescreva historico compartilhado.
-- Commits e push para o remoto configurado fazem parte da entrega quando forem solicitados.
+- Comece lendo `README.md` e `docs/memory-bank/CURRENT.md`.
+- Investigue antes de perguntar; pergunte apenas quando uma escolha mudar
+  materialmente o produto e nao puder ser inferida com seguranca.
+- Prossiga autonomamente enquanto houver uma proxima acao segura e objetiva.
+- Prefira a menor arquitetura que entregue um incremento vertical utilizavel.
+- Nao implemente grandes camadas especulativas.
+- Mantenha leitura, mapeamento, validacao, transformacao e persistencia separaveis.
+- Toda inferencia deve ser explicavel, testavel e auditavel.
+- Nao envie dados importados, credenciais ou dados pessoais a servicos externos
+  sem autorizacao explicita.
+- Nao use force-push nem reescreva historico compartilhado.
+- Commits e push fazem parte da entrega quando solicitados.
+
+## Primeira tarefa do agente
+
+1. Elicitar ou inferir os casos de uso essenciais.
+2. Comparar alternativas minimas de arquitetura e toolchain Java.
+3. Decidir e registrar a versao Java e o build tool.
+4. Definir o primeiro incremento vertical e seus criterios de aceite.
+5. Implementar somente depois dessas decisoes.
 
 ## Criterio de conclusao
 
-Uma mudanca so esta pronta quando:
-
-1. comportamento e contratos estao implementados;
-2. testes relevantes passam;
-3. `python -m compileall -q src` passa;
-4. documentacao afetada foi atualizada;
-5. `docs/memory-bank/CURRENT.md` registra estado e proximo passo;
-6. `docs/memory-bank/DECISIONS.md` ou `LEARNINGS.md` registra apenas conhecimento duravel novo;
-7. `git diff --check` nao aponta problemas.
-
-## Validacao padrao
-
-```bash
-python -m unittest discover -s tests -v
-python -m compileall -q src
-git diff --check
-```
-
-Dependencias opcionais nao devem impedir os testes do nucleo. Para mudancas de
-formato, inclua fixtures pequenas e anonimizadas. Nunca versione planilhas reais
-ou segredos.
+Antes de concluir uma entrega, execute testes e validacoes proporcionais ao
+risco, atualize a documentacao afetada e registre o estado em
+`docs/memory-bank/CURRENT.md`.
 
 ## Memory bank
 
-- `CURRENT.md`: estado presente, riscos e proximo passo. Atualize a cada entrega material.
-- `DECISIONS.md`: decisoes arquiteturais duraveis, com data e motivo.
-- `LEARNINGS.md`: falhas, comandos e fatos reutilizaveis confirmados.
-- Nao grave tokens, senhas, dados pessoais, transcricoes ou suposicoes.
-- Corrija entradas obsoletas em vez de apenas acumular contradicoes.
+- `CURRENT.md`: estado presente, riscos e proximo passo.
+- `DECISIONS.md`: decisoes arquiteturais confirmadas, com contexto e motivo.
+- `LEARNINGS.md`: fatos e falhas reutilizaveis confirmados.
+- Atualize apenas conhecimento duravel; nunca registre segredos ou suposicoes.

@@ -1,17 +1,16 @@
 # Decisoes arquiteturais
 
-## 2026-09-10 - Nucleo Python sem dependencia de runtime
+## 2026-09-10 - Nome Rizoma
 
-O MVP usa a biblioteca padrao para CSV e inferencia lexical. Isso reduz o custo
-de instalacao e permite validar o contrato antes de adicionar XLSX ou IA.
+O nome representa uma estrutura viva que parece simples na superficie e forma
+conexoes complexas em profundidade.
 
-## 2026-09-10 - IA como fallback explicavel
+## 2026-09-10 - Linguagem Java
 
-Heuristicas deterministicas resolvem correspondencias claras. Um futuro
-adaptador LLM atuara somente em ambiguidades, com minimizacao de dados e saida
-estruturada, preservando reproducibilidade e privacidade.
+Java e a linguagem definida para o produto. A versao ainda nao foi fechada;
+Java 21 ou superior e apenas a hipotese inicial.
 
 ## 2026-09-10 - Autonomia confinada ao workspace
 
-O Codex usa aprovacao `never` com sandbox `workspace-write`. A configuracao
-elimina interrupcoes rotineiras sem conceder acesso irrestrito a maquina.
+O Codex opera sem prompts rotineiros, mas permanece limitado ao workspace.
+Decisoes irreversiveis, segredos e dados externos continuam protegidos.

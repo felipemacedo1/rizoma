@@ -1,20 +1,21 @@
-# Roadmap
+# Roadmap inicial
 
-## Agora
+## Descoberta
 
-- [x] Leitura e escrita CSV.
-- [x] Deteccao de delimitador e codificacao comum.
-- [x] Schema declarativo com aliases e obrigatoriedade.
-- [x] Plano de mapeamento com confianca e motivo.
-- [x] CLI de planejamento e execucao.
-- [x] Testes do nucleo.
+- [ ] Definir usuarios, origem dos arquivos e destino dos dados.
+- [ ] Definir volume, tamanho maximo, latencia e modo de execucao.
+- [ ] Definir regras de validacao, revisao humana e tolerancia a ambiguidades.
+- [ ] Definir requisitos de seguranca, privacidade e auditoria.
 
-## Proximas entregas
+## Decisoes tecnicas
 
-- [ ] Leitor XLSX opcional com selecao de aba e cabecalho.
-- [ ] Tipos, validadores e transformacoes declarativas por campo.
-- [ ] Perfilamento de amostras para melhorar inferencia.
-- [ ] Revisao humana apenas para mapeamentos ambiguos.
-- [ ] Adaptador LLM opcional com dados minimizados e resposta estruturada.
-- [ ] Importacao idempotente para banco/API, lotes e dead-letter queue.
-- [ ] Metricas, observabilidade e suite de benchmarks de schemas reais anonimizados.
+- [ ] Confirmar Java 21 ou uma versao superior.
+- [ ] Escolher Maven ou Gradle.
+- [ ] Decidir entre biblioteca, CLI, servico ou composicao desses formatos.
+- [ ] Escolher bibliotecas de CSV/XLSX apenas apos definir os casos de uso.
+
+## Primeiro incremento
+
+- [ ] Especificar um fluxo vertical pequeno e seus criterios de aceite.
+- [ ] Implementar com testes e fixtures anonimizadas.
+- [ ] Medir qualidade do mapeamento antes de introduzir LLM.

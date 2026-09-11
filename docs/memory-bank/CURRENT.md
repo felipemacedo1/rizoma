@@ -2,24 +2,26 @@
 
 Atualizado em: 2026-09-10
 
-Projeto: Rizoma — uma estrutura simples na superficie e conectada em profundidade.
+## Confirmado
 
-## Entregue
+- Nome do projeto: Rizoma.
+- Linguagem: Java.
+- Objetivo: motor inteligente e automatizado de importacao de planilhas e CSV.
+- Repositorio privado `felipemacedo1/rizoma` criado e branch `main` publicada.
+- Workspace Codex autonomo configurado, com memoria nativa habilitada.
 
-- MVP Python sem dependencias de runtime para CSV.
-- Inferencia deterministica por aliases, similaridade e exclusividade de origem.
-- CLI `plan` e `run`, relatorio JSON e bloqueio de campos obrigatorios ausentes.
-- Workspace Codex autonomo, memoria nativa habilitada e regras em `AGENTS.md`.
-- Repositorio privado `felipemacedo1/rizoma` criado via GitHub API e branch `main` publicada.
+## Ainda nao decidido
 
-## Riscos conhecidos
+- Versao Java definitiva; Java 21 ou superior e a direcao provavel.
+- Build tool, framework, arquitetura, formato de distribuicao e persistencia.
+- Contratos funcionais e nao funcionais detalhados.
 
-- CSV com codificacoes fora de UTF-8/UTF-8-SIG/Latin-1 exige estrategia adicional.
-- Similaridade lexical nao entende sinonimos ausentes do schema.
-- XLSX ainda nao foi implementado.
-- GitHub Actions encerra com `startup_failure` antes de criar jobs; o workflow esta ativo e o YAML foi validado, indicando bloqueio externo ao codigo. Os 7 testes locais passam.
+## Estado de implementacao
 
-## Proximo passo recomendado
+Nenhum codigo do produto foi iniciado. O proximo agente deve primeiro definir
+requisitos e registrar as decisoes minimas antes de implementar.
 
-Implementar o leitor XLSX opcional mantendo o contrato `dict[str, str]` e criar
-fixtures cobrindo multiplas abas, celulas vazias e cabecalho deslocado.
+## Proximo passo
+
+Conduzir a descoberta inicial e propor o menor incremento vertical que valide
+leitura, mapeamento, validacao e saida de um arquivo representativo.

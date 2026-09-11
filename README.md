@@ -1,68 +1,23 @@
 # Rizoma
 
-Rizoma representa uma estrutura viva: simples na superficie, conectada e complexa em profundidade.
+Rizoma representa uma estrutura viva: simples na superficie, conectada e
+complexa em profundidade.
 
-Motor extensivel para importar CSV e, nas proximas etapas, XLSX com deteccao de
-formato, mapeamento inteligente de colunas, validacao e trilha de auditoria.
+Este repositorio e o ponto de partida de um motor inteligente e automatizado
+para importacao de planilhas e CSV. O projeto sera desenvolvido em **Java**.
 
-O MVP ja executa um fluxo completo para CSV:
+Ainda nao ha implementacao nem arquitetura fechada. O agente deve iniciar pela
+descoberta dos requisitos, registrar decisoes e construir o primeiro incremento
+vertical validavel.
 
-1. detecta delimitador e codificacao;
-2. compara cabecalhos com nomes e aliases do schema;
-3. calcula confianca e impede que uma coluna de origem seja reutilizada;
-4. bloqueia importacoes com campos obrigatorios nao mapeados;
-5. gera CSV normalizado e relatorio JSON auditavel.
+## Premissas iniciais
 
-## Inicio rapido
+- Linguagem: Java.
+- Versao: Java 21 ou superior e a direcao provavel, ainda sujeita a decisao.
+- Entradas esperadas: CSV e planilhas.
+- Capacidades esperadas: deteccao, mapeamento inteligente, validacao,
+  transformacao, importacao e auditoria.
+- IA deve ser usada apenas onde agregar valor verificavel.
 
-Requer Python 3.11 ou superior. O nucleo nao possui dependencia de runtime.
-
-```bash
-python -m smart_import_engine.cli plan examples/customers.csv --schema examples/customer_schema.json
-python -m smart_import_engine.cli run examples/customers.csv --schema examples/customer_schema.json --output output/customers.csv
-```
-
-Durante o desenvolvimento:
-
-```bash
-python -m unittest discover -s tests -v
-python -m compileall -q src
-```
-
-Para instalar o comando `rizoma` e as ferramentas de desenvolvimento:
-
-```bash
-python -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-rizoma --help
-```
-
-## Schema
-
-```json
-{
-  "fields": {
-    "customer_name": {
-      "aliases": ["nome", "nome do cliente"],
-      "required": true
-    },
-    "email": {
-      "aliases": ["e-mail", "email principal"],
-      "required": true
-    }
-  }
-}
-```
-
-Mapeamentos abaixo do limiar sao tratados como nao resolvidos. O plano sempre
-deve ser inspecionavel antes de evoluirmos para inferencia por LLM.
-
-## Projeto orientado a agentes
-
-- `AGENTS.md`: contrato operacional e criterio de conclusao.
-- `.codex/config.toml`: autonomia sem prompts, limitada ao workspace.
-- `docs/memory-bank/`: estado, decisoes e aprendizados versionados.
-- `docs/architecture.md`: limites e desenho incremental.
-- `docs/roadmap.md`: proximas entregas priorizadas.
-
-Veja [.codex/README.md](.codex/README.md) antes de ampliar permissoes.
+As instrucoes operacionais ficam em `AGENTS.md`, a configuracao do Codex em
+`.codex/config.toml` e a continuidade do trabalho em `docs/memory-bank/`.
