@@ -25,8 +25,9 @@ O roadmap detalhado e seus criterios de aceite ficam na
 - [x] CLI `analyze` e `explain` com relatorio JSON.
 - [x] Testes de unidade, propriedade, contrato, integracao e 1M de linhas.
 - [x] `verify` local em Java 21 e Java 25 com `--release 21`.
-- [ ] Confirmar a execucao da matriz 21/25 e do quickstart no GitHub Actions
-  depois que as alteracoes forem autorizadas para commit/push.
+- [ ] Confirmar a matriz 21/25 e o quickstart no GitHub Actions. A execucao
+  `34589348866` foi criada, mas os jobs nao iniciaram devido ao bloqueio de
+  cobranca da conta GitHub.
 
 ## Versoes seguintes
 

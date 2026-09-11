@@ -45,9 +45,11 @@ paralelismo, ML, embeddings e LLM.
 
 ## Limites e riscos atuais
 
-- A matriz GitHub Actions 21/25 e o quickstart estao configurados, mas nao foram
-  executados remotamente porque codigo/CI ainda nao foram commitados nem
-  enviados nesta entrega.
+- O commit `ad9eb9b` foi enviado para `origin/main`. O GitHub Actions criou a
+  execucao `34589348866`, mas nenhum step iniciou: os jobs Java 21 e 25 foram
+  recusados porque a conta GitHub esta bloqueada por um problema de cobranca.
+  Portanto, a matriz e o quickstart continuam sem verificacao remota; isso nao
+  representa falha observada no codigo ou no workflow.
 - Commons CSV entrega o campo depois de aloca-lo. O limite de bytes e antecipado,
   mas `maxFieldChars` e verificado apos tokenizacao; hardening anterior a
   alocacao permanece para 0.1b.
@@ -55,6 +57,6 @@ paralelismo, ML, embeddings e LLM.
 
 ## Proximo passo
 
-Revisar o diff final e, quando houver autorizacao explicita, commit/push para
-obter evidencia do GitHub Actions. Depois, iniciar 0.1b com XLS/XLSX e
-hardening de arquivos, sem reabrir os contratos confirmados.
+Resolver o bloqueio de cobranca da conta GitHub e reexecutar a matriz 21/25 para
+obter evidencia remota. Depois, iniciar 0.1b com XLS/XLSX e hardening de
+arquivos, sem reabrir os contratos confirmados.

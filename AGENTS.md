@@ -38,9 +38,9 @@ estado vigente.
 
 ## Proxima tarefa executavel
 
-Obter a evidencia remota do CI do incremento 0.1a quando commit/push forem
-solicitados. Em seguida, implementar 0.1b (XLS/XLSX e hardening de arquivos)
-sem antecipar modulos posteriores.
+Reexecutar o CI remoto do incremento 0.1a depois que o bloqueio de cobranca da
+conta GitHub for resolvido. Em seguida, implementar 0.1b (XLS/XLSX e hardening
+de arquivos) sem antecipar modulos posteriores.
 
 ## Criterio de conclusao
 
