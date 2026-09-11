@@ -1,15 +1,12 @@
 # Compativel com OpenAI Codex CLI 0.150.1.
-# Autonomia sem prompts, preservando o limite gravavel do workspace.
+# Acesso total autorizado pelo mantenedor para operacoes Git e release.
 approval_policy = "never"
-sandbox_mode = "workspace-write"
+sandbox_mode = "danger-full-access"
 model_reasoning_effort = "high"
 model_verbosity = "medium"
 web_search = "live"
 tool_output_token_limit = 24000
 project_doc_max_bytes = 32768
-
-[sandbox_workspace_write]
-network_access = true
 
 [features]
 memories = true

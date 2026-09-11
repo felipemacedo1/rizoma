@@ -1,8 +1,9 @@
 # Configuracao Codex do projeto
 
 Esta configuracao combina `approval_policy = "never"` com
-`sandbox_mode = "workspace-write"`: o agente nao interrompe o fluxo com pedidos
-de aprovacao, mas continua confinado ao workspace e aos diretorios temporarios.
+`sandbox_mode = "danger-full-access"`. O mantenedor autorizou o agente a operar
+sem prompts e sem a sandbox local, inclusive para escrever em `.git`, commitar,
+criar tags e usar o remoto configurado.
 
 Acesso de rede e pesquisa atual estao habilitados para documentacao,
 dependencias e GitHub. Isso aumenta a autonomia e tambem a superficie de prompt
@@ -12,6 +13,7 @@ Memorias nativas estao habilitadas, mas sao assincronas e ficam no Codex home.
 O estado obrigatorio do projeto vive em `docs/memory-bank/`, que e versionado e
 atualizavel pelo agente. As regras duraveis permanecem em `AGENTS.md`.
 
-O modo `danger-full-access` foi deliberadamente evitado: ele removeria a
-fronteira que impede escritas fora do projeto. Se algum trabalho realmente
-exigir esse modo, execute-o apenas em container descartavel e isolado.
+Este modo remove as fronteiras locais de filesystem e rede. O agente deve manter
+o escopo no Rizoma, nao acessar credenciais sem necessidade, nao reescrever
+historico compartilhado e exigir autorizacao explicita antes de publicar uma
+release, mesmo que tecnicamente possa executar essas operacoes.
