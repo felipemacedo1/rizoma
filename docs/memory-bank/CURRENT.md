@@ -1,27 +1,43 @@
 # Estado atual
 
-Atualizado em: 2026-09-10
+Atualizado em: 2026-09-11
 
 ## Confirmado
 
 - Nome do projeto: Rizoma.
 - Linguagem: Java.
-- Objetivo: motor inteligente e automatizado de importacao de planilhas e CSV.
+- Objetivo: motor deterministico de ingestao, profiling, mapeamento, validacao,
+  transformacao e migracao de dados, inicialmente CSV, XLS e XLSX.
 - Repositorio publico `felipemacedo1/rizoma` criado e branch `main` publicada.
 - Workspace Codex autonomo configurado, com memoria nativa habilitada.
+- Baseline Java 21, testado tambem em Java 25; sem features preview no core.
+- Build tool Maven 3.9.x via Maven Wrapper.
+- Arquitetura: monolito modular de biblioteca com core independente de framework.
+- Primeiro adaptador executavel: CLI; nenhum servidor web no MVP.
+- Modulos planejados: core, CSV, Excel, locale pt-BR e CLI.
+- Especificacao consolidada em `docs/architecture/TECHNICAL_SPECIFICATION.md`.
+- Primeiro incremento: 0.1a, analise CSV explicavel.
 
-## Ainda nao decidido
+## Decisoes pendentes da implementacao
 
-- Versao Java definitiva; Java 21 ou superior e a direcao provavel.
-- Build tool, framework, arquitetura, formato de distribuicao e persistencia.
-- Contratos funcionais e nao funcionais detalhados.
+- Versoes exatas das dependencias, verificadas quando o build for criado.
+- Formato JSON final do target schema e do relatorio.
+- Valores seguros padrao para limites de arquivos.
+- Pesos e thresholds calibrados com corpus; os atuais sao baseline configuravel.
+- Implementacoes de sketches, decididas por benchmark/erro observado.
+- Substituicao da LICENSE MIT por Apache-2.0 antes do primeiro codigo.
 
 ## Estado de implementacao
 
-Nenhum codigo do produto foi iniciado. O proximo agente deve primeiro definir
-requisitos e registrar as decisoes minimas antes de implementar.
+**IMPLEMENTADO:** especificacao, revisao critica, arquitetura e roadmap.
+
+**NAO IMPLEMENTADO:** todo codigo de producao, testes, CLI, readers e benchmarks.
+
+**PLANEJADO:** capacidades posteriores descritas no roadmap. Nao ha alegacao de
+funcionalidade executavel nesta etapa.
 
 ## Proximo passo
 
-Conduzir a descoberta inicial e propor o menor incremento vertical que valide
-leitura, mapeamento, validacao e saida de um arquivo representativo.
+Implementar 0.1a incrementalmente: build minimo, core, CSV streaming,
+normalizacao/profiling, metricas, scoring e CLI, compilando e testando cada
+etapa antes de avancar.
