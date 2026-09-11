@@ -18,14 +18,16 @@ Atualizado em: 2026-09-11
 
 ## Estado de implementacao
 
-**IMPLEMENTADO E VERIFICADO LOCALMENTE:** incrementos 0.1a e 0.1b. A API e a
-CLI leem CSV e XLSX em fluxo e XLS legado sob limite de memoria, detectam
-estrutura, selecionam worksheet, normalizam headers, constroem perfis e
-features limitadas, acumulam evidencia de CPF/e-mail/telefone/data, calculam
-Dice e Levenshtein normalizado, ranqueiam candidatos, abstêm em casos
-insuficientes/contraditorios, detectam colisao exclusiva e produzem relatorio
-JSON protegido e explicacao. Excel inclui datas ISO, gaps, formulas nunca
-avaliadas e preflight contra arquivos hostis.
+**IMPLEMENTADO, VERIFICADO LOCALMENTE E PERSISTIDO NO REMOTO:** incrementos
+0.1a e 0.1b. A API e a CLI leem CSV e XLSX em fluxo e XLS legado sob limite de
+memoria, detectam estrutura, selecionam worksheet, normalizam headers,
+constroem perfis e features limitadas, acumulam evidencia de
+CPF/e-mail/telefone/data, calculam Dice e Levenshtein normalizado, ranqueiam
+candidatos, abstêm em casos insuficientes/contraditorios, detectam colisao
+exclusiva e produzem relatorio JSON protegido e explicacao. Excel inclui datas
+ISO, gaps, formulas nunca avaliadas e preflight contra arquivos hostis. O
+commit `1887a14` e a candidata oficial a release 0.1; nenhuma tag ou release foi
+publicada.
 
 **PLANEJADO / NAO IMPLEMENTADO:** detector completo de CNPJ e CEP, profiling
 avancado, anomalias por linha, transformacao, validacao de
@@ -52,11 +54,15 @@ paralelismo, ML, embeddings e LLM.
 
 ## Limites e riscos atuais
 
-- O commit `ad9eb9b` foi enviado para `origin/main`. O GitHub Actions criou a
-  execucao `34589348866`, mas nenhum step iniciou: os jobs Java 21 e 25 foram
-  recusados porque a conta GitHub esta bloqueada por um problema de cobranca.
-  Portanto, a matriz e o quickstart continuam sem verificacao remota; isso nao
-  representa falha observada no codigo ou no workflow.
+- O commit `1887a14834269b091ada27a969adf704dc22839c` esta em `origin/main`.
+  HEAD local, tracking branch e ref remota foram comparados; o tree SHA local e
+  o retornado pela API do GitHub sao
+  `6442528d10dba0e14f35d087cd4cfff1cb911580`.
+- O GitHub Actions criou a execucao `34654764370` para o commit do 0.1b, mas
+  nenhum step iniciou: os jobs Java 21 e 25 foram recusados porque a conta
+  GitHub continua bloqueada por um problema de cobranca. Portanto, a matriz e o
+  quickstart continuam sem verificacao remota; isso nao representa falha
+  observada no codigo ou no workflow.
 - Commons CSV entrega o campo depois de aloca-lo. O limite de bytes e antecipado,
   mas `maxFieldChars` e verificado apos tokenizacao; hardening anterior a
   alocacao permanece como risco conhecido.
@@ -64,13 +70,9 @@ paralelismo, ML, embeddings e LLM.
   da worksheet, mas a shared strings table do POI e materializada e limitada
   indiretamente pelo teto expandido por entrada.
 - Pesos sao baseline configuravel e a calibracao continua `UNCALIBRATED`.
-- As mudancas do 0.1b permanecem no worktree: neste ambiente, `.git` esta
-  montado somente para leitura e a criacao de `index.lock` foi recusada. Commit,
-  pull/rebase e push nao foram executados; nenhum conteudo local foi descartado.
 
 ## Proximo passo
 
-Conceder escrita ao diretorio `.git`, criar e sincronizar o commit do 0.1b e
-reexecutar a matriz 21/25 no GitHub depois de resolver o bloqueio de cobranca da
-conta. Publicacao de release exige autorizacao separada; o proximo incremento de
-codigo continua sendo 0.2.
+Resolver o bloqueio de cobranca e reexecutar a matriz 21/25 no GitHub para obter
+evidencia remota. Publicacao de tag, release ou artefatos exige autorizacao
+separada; o proximo incremento de codigo continua sendo 0.2.
