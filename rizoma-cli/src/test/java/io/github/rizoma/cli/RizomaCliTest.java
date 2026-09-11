@@ -2,6 +2,7 @@ package io.github.rizoma.cli;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.rizoma.core.AnalysisOptions;
 import io.github.rizoma.core.AnalysisRequest;
 import io.github.rizoma.core.AnalysisResult;
@@ -20,11 +21,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class RizomaCliTest {
     static { java.util.logging.Logger.getLogger("org.apache.poi").setLevel(java.util.logging.Level.SEVERE); }
@@ -62,6 +63,28 @@ class RizomaCliTest {
         AnalysisResult library = libraryAnalyze(source, schemaPath);
         assertEquals(library.candidatesByColumn(), cli.candidatesByColumn());
         assertEquals(library.decisionsByColumn(), cli.decisionsByColumn());
+    }
+
+    @Test void explainRemainsCompatibleWithAnalysisReportVersionOneZero() throws Exception {
+        Path currentReport = temporary.resolve("report-1.1.json");
+        assertEquals(0, run("analyze", example("clientes.csv").toString(), "--schema",
+                example("customer.schema.json").toString(), "--out", currentReport.toString()));
+
+        ObjectNode legacy = (ObjectNode) JsonSupport.MAPPER.readTree(currentReport.toFile());
+        legacy.put("formatVersion", "1.0");
+        ((ObjectNode) legacy.get("structure")).remove("attributes");
+        Path legacyReport = temporary.resolve("report-1.0.json");
+        JsonSupport.MAPPER.writeValue(legacyReport.toFile(), legacy);
+
+        var output = new StringWriter();
+        var error = new StringWriter();
+        int exit = RizomaCli.execute(new String[]{"explain", legacyReport.toString(), "--column-id", "c1"},
+                new PrintWriter(output, true), new PrintWriter(error, true));
+
+        assertEquals(RizomaCli.OK, exit, error.toString());
+        assertTrue(output.toString().contains("customer.document"));
+        AnalysisResult parsed = JsonSupport.MAPPER.readValue(legacyReport.toFile(), AnalysisResult.class);
+        assertEquals(Map.of(), parsed.structure().attributes());
     }
 
     @Test void documentContentOutranksIncompatibleCandidateAndBareDigitsDoNotAutoMap() throws Exception {

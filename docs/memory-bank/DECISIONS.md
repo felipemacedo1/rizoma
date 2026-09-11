@@ -103,3 +103,21 @@ evidencia de demanda. Formulas nunca sao avaliadas e usam politica `cached`,
 O `AnalysisResult` passou a 1.1 para incluir atributos seguros de estrutura,
 como indice da planilha e linha de inicio. O fingerprint de configuracao agora
 inclui reader options e seed. `explain` continua lendo 1.0 e 1.1.
+
+## 2026-09-11 - Hardening da candidata 0.1
+
+A compatibilidade de leitura de relatorio 1.0 e uma garantia de regressao da
+CLI e possui teste dedicado; o core continua produzindo somente 1.1. XLSX com
+qualquer relacionamento externo e rejeitado a partir dos metadados OPC antes da
+worksheet, sem resolver o alvo. O teste usa listener loopback sem resposta e
+exige zero conexoes, evitando dependencia de rede externa.
+
+Fixtures versionadas devem ser sinteticas, pequenas e sem vinculo com pessoas
+ou sistemas reais. CPFs com checksum valido sao permitidos somente quando
+necessarios para o detector, acompanhados de nomes genericos, dominios
+reservados e documentacao explicita de proveniencia.
+
+Documentos de contribuicao, conduta, seguranca e changelog passam a fazer parte
+do gate da primeira release. Como o reporte privado do GitHub esta desabilitado,
+`SECURITY.md` nao inventa um e-mail nem promete SLA; orienta contato privado do
+mantenedor e um fallback publico sem detalhes exploraveis.

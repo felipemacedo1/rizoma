@@ -14,6 +14,9 @@ import io.github.rizoma.core.TargetSchema;
 import java.io.IOException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.SocketTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -26,6 +29,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.openxml4j.opc.PackagingURIHelper;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -154,6 +159,34 @@ class ExcelDataReaderTest {
         var rejected = assertThrows(EngineException.class,
                 () -> reader.detect(new PathTabularSource(macro), AnalysisOptions.defaults(), EngineLimits.defaults()));
         assertEquals("EXCEL_MACRO_NOT_SUPPORTED", rejected.code());
+    }
+
+    @Test void externalRelationshipsAreRejectedWithoutAnyNetworkConnection() throws Exception {
+        Path path = temporary.resolve("external-relationship.xlsx");
+        try (var workbook = new XSSFWorkbook()) {
+            var sheet = workbook.createSheet("Data");
+            sheet.createRow(0).createCell(0).setCellValue("Name");
+            sheet.createRow(1).createCell(0).setCellValue("Synthetic");
+            try (var output = Files.newOutputStream(path)) { workbook.write(output); }
+        }
+
+        try (var listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            listener.setSoTimeout(250);
+            String target = "http://127.0.0.1:" + listener.getLocalPort() + "/external.xlsx";
+            try (OPCPackage packageFile = OPCPackage.open(path.toFile())) {
+                packageFile.getPart(PackagingURIHelper.createPartName("/xl/workbook.xml"))
+                        .addExternalRelationship(target,
+                                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink");
+            }
+
+            EngineException rejected = assertThrows(EngineException.class,
+                    () -> reader.detect(new PathTabularSource(path), AnalysisOptions.defaults(),
+                            EngineLimits.defaults()));
+            assertEquals("EXCEL_EXTERNAL_RELATIONSHIP", rejected.code());
+            assertFalse(rejected.getMessage().contains(target));
+            assertThrows(SocketTimeoutException.class, listener::accept,
+                    "the reader must reject metadata without connecting to the external target");
+        }
     }
 
     @Test void nonLocalXlsxSpoolIsBoundedClosedAndDeleted() throws Exception {

@@ -109,6 +109,8 @@ injetados podem possuir restricoes proprias.
 
 O formato do esquema e do relatorio esta em
 [docs/contracts/JSON_CONTRACTS_0.1B.md](docs/contracts/JSON_CONTRACTS_0.1B.md).
+Relatorios 1.1 sao produzidos atualmente; o comando `explain` continua lendo
+relatorios 1.0 para compatibilidade.
 
 ## Limites e seguranca
 
@@ -131,6 +133,11 @@ externas. Formulas aceitam `cached` (default), `expression` ou `reject`; nenhuma
 politica executa a formula. Em workbooks com mais de uma planilha, use
 `--sheet "Nome"` ou `--sheet 0`.
 
+Relacionamentos externos de qualquer tipo sao rejeitados a partir dos
+metadados do pacote antes da leitura da worksheet. O reader nao resolve nem
+acessa o destino externo; esse comportamento possui teste com listener local
+que confirma zero conexoes.
+
 Valores brutos so existem transitoriamente para detectores autorizados. O
 relatorio contem agregados e amostras como `<redacted:length=N>`, mesmo quando o
 tipo semantico nao foi reconhecido. O motor nao usa rede, nao altera a fonte e
@@ -151,6 +158,20 @@ por entrada. Celulas mescladas nao sao propagadas: somente a ancora possui valor
 O XLS legado nao e streaming. Valores `cached` de formula podem estar obsoletos,
 pois o Rizoma deliberadamente nao recalcula workbooks. Os artefatos permanecem
 `SNAPSHOT` e ainda nao foram publicados em registry ou release.
+
+## Fixtures e dados
+
+Todas as fixtures versionadas sao sinteticas e nao representam pessoas ou
+sistemas reais. Consulte [examples/README.md](examples/README.md) para a
+proveniencia e as regras de contribuicao. Relatorios gerados ficam fora do Git;
+amostras publicas sao mascaradas mesmo quando o tipo semantico e desconhecido.
+
+## Comunidade e seguranca
+
+- [Como contribuir](CONTRIBUTING.md)
+- [Codigo de conduta](CODE_OF_CONDUCT.md)
+- [Politica de seguranca](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## Documentacao
 

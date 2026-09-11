@@ -38,7 +38,8 @@ O roadmap detalhado e seus criterios de aceite ficam na
 - [x] Rejeicao de path traversal, macro e relacionamento externo.
 - [x] Paridade top-1 CSV/XLS/XLSX para os sete campos da fixture principal.
 - [x] API e CLI usam o mesmo pipeline para os tres formatos.
-- [x] `verify` local em Java 21 e Java 25, 42 testes sem falha.
+- [x] `verify` local em Java 21 e Java 25; suite ampliada pelo hardening para
+  44 testes sem falha.
 - [ ] Reexecutar GitHub Actions apos resolver o bloqueio de cobranca.
 - [ ] Publicar release/tag/artefatos somente mediante autorizacao explicita.
 
@@ -51,3 +52,16 @@ O roadmap detalhado e seus criterios de aceite ficam na
 - **0.6:** SPI documentada e novas fontes orientadas por demanda.
 - **0.9:** API candidate, hardening e benchmarks publicados.
 - **1.0:** API estavel, release/SBOM e qualidade documentada.
+
+## Hardening da candidata 0.1
+
+- [x] Adicionar `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` e
+  `CHANGELOG.md` coerentes com o estado real.
+- [x] Documentar que fixtures sao sinteticas e auditar dados versionados.
+- [x] Testar `explain` com relatorio JSON 1.0 sem `structure.attributes`.
+- [x] Testar rejeicao de relacionamento externo XLSX e zero conexoes de rede.
+- [x] Reexecutar `clean verify` local em Java 21 e Java 25.
+- [x] Reexecutar quickstart e verificar mascaramento das saidas.
+- [ ] Remover `SNAPSHOT` em commit de release separado.
+- [ ] Obter CI remoto verde depois de resolver o bloqueio de billing.
+- [ ] Criar tag/release somente mediante nova autorizacao.

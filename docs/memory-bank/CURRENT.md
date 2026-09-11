@@ -36,8 +36,8 @@ paralelismo, ML, embeddings e LLM.
 
 ## Evidencias locais
 
-- `verify`, usando cache Maven gravavel do sandbox, passou no OpenJDK
-  21.0.12 e no Temurin 25.0.4.1 LTS: 42 testes, zero falhas em cada JDK, sempre
+- `clean verify`, usando cache Maven gravavel do sandbox, passou no OpenJDK
+  21.0.12 e no Temurin 25.0.4.1 LTS: 44 testes, zero falhas em cada JDK, sempre
   compilando com `release 21`.
 - JaCoCo do core: 464/485 linhas (95,67%) e 280/340 branches (82,35%); gates
   85%/80% atendidos sem exclusoes.
@@ -50,7 +50,11 @@ paralelismo, ML, embeddings e LLM.
 - Quickstart `analyze` e `explain` executado localmente sobre `examples/`.
 - CSV, XLS e XLSX produziram os mesmos sete destinos top-1. Testes Excel cobrem
   ZIP64, 10.000 linhas, planilha multipla/vazia, datas, gaps, zeros de formato,
-  formulas, temporarios, limites, macros e paths ZIP inseguros.
+  formulas, temporarios, limites, macros, paths ZIP inseguros e rejeicao de
+  relacionamento externo sem conexao de rede. A CLI possui regressao dedicada
+  para `explain` de relatorio JSON 1.0.
+- Documentos comunitarios e de seguranca estao presentes; fixtures e saidas
+  versionadas foram auditadas e possuem proveniencia sintetica documentada.
 
 ## Limites e riscos atuais
 
@@ -58,11 +62,11 @@ paralelismo, ML, embeddings e LLM.
   HEAD local, tracking branch e ref remota foram comparados; o tree SHA local e
   o retornado pela API do GitHub sao
   `6442528d10dba0e14f35d087cd4cfff1cb911580`.
-- O GitHub Actions criou a execucao `34654764370` para o commit do 0.1b, mas
-  nenhum step iniciou: os jobs Java 21 e 25 foram recusados porque a conta
-  GitHub continua bloqueada por um problema de cobranca. Portanto, a matriz e o
-  quickstart continuam sem verificacao remota; isso nao representa falha
-  observada no codigo ou no workflow.
+- As execucoes do GitHub Actions, incluindo `34654764370` para o commit base do
+  0.1b, nao iniciaram nenhum step: os jobs Java 21 e 25 foram recusados porque a
+  conta GitHub continua bloqueada por um problema de cobranca. Portanto, a
+  matriz e o quickstart continuam sem verificacao remota; isso nao representa
+  falha observada no codigo ou no workflow.
 - Commons CSV entrega o campo depois de aloca-lo. O limite de bytes e antecipado,
   mas `maxFieldChars` e verificado apos tokenizacao; hardening anterior a
   alocacao permanece como risco conhecido.
@@ -70,9 +74,12 @@ paralelismo, ML, embeddings e LLM.
   da worksheet, mas a shared strings table do POI e materializada e limitada
   indiretamente pelo teto expandido por entrada.
 - Pesos sao baseline configuravel e a calibracao continua `UNCALIBRATED`.
+- A versao permanece `0.1.0-SNAPSHOT`; a mudanca para `0.1.0` depende de CI
+  remoto operacional e sera feita em commit de release separado.
 
 ## Proximo passo
 
-Resolver o bloqueio de cobranca e reexecutar a matriz 21/25 no GitHub para obter
-evidencia remota. Publicacao de tag, release ou artefatos exige autorizacao
-separada; o proximo incremento de codigo continua sendo 0.2.
+Resolver o bloqueio de cobranca e obter matriz 21/25 verde para o commit de
+hardening. Depois, preparar o commit final `0.1.0`; publicacao de tag, release ou
+artefatos exige autorizacao separada. O milestone 0.2 nao deve iniciar antes
+dessa decisao.

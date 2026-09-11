@@ -24,3 +24,12 @@
   do POI ainda ocupam memoria e precisam de limite expandido explicito.
 - Abrir `OPCPackage` por arquivo read-only evita o custo de memoria do overload
   de `InputStream`; fontes nao locais precisam de spool limitado e limpeza.
+- Um relacionamento externo OPC pode ser testado sem internet: adicionar um
+  alvo HTTP para um `ServerSocket` loopback e verificar timeout no `accept`
+  prova que a rejeicao ocorreu sem conexao ou carregamento do alvo.
+- Compatibilidade declarada de JSON precisa de fixture da versao anterior; mudar
+  `formatVersion` e remover o campo introduzido em 1.1 exercita a desserializacao
+  real, nao apenas uma condicao isolada de versao.
+- Um CPF com checksum valido nao possui faixa reservada para testes. A fixture
+  deve deixar origem sintetica explicita e nunca associar o numero a uma pessoa
+  ou conta real.
