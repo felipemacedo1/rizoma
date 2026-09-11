@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "customer_name": {
+      "aliases": ["nome", "nome do cliente", "cliente"],
+      "required": true
+    },
+    "email": {
+      "aliases": ["e-mail", "email principal"],
+      "required": true
+    },
+    "phone": {
+      "aliases": ["telefone", "celular", "whatsapp"],
+      "required": false
+    }
+  }
+}
