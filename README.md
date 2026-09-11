@@ -1,5 +1,7 @@
 # Rizoma
 
+Rizoma representa uma estrutura viva: simples na superficie, conectada e complexa em profundidade.
+
 Motor extensivel para importar CSV e, nas proximas etapas, XLSX com deteccao de
 formato, mapeamento inteligente de colunas, validacao e trilha de auditoria.
 
