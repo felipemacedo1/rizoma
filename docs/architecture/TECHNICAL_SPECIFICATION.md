@@ -1,6 +1,6 @@
 # Rizoma — especificação técnica e arquitetura recomendada
 
-Status: **consolidada para iniciar o incremento vertical 0.1a**
+Status: **incremento 0.1a implementado e verificado localmente; CI remoto pendente**
 
 Data: 2026-09-10
 
@@ -136,15 +136,14 @@ Elevar o baseline para 25 exigirá ADR e benefício mensurado ou versão major.
 
 Maven foi escolhido por convenção forte, POMs legíveis, publicação simples no
 Maven Central, familiaridade corporativa e suporte multimódulo. A flexibilidade
-extra do Gradle não traz benefício proporcional ao build inicial. Maven 4 ainda
-não é GA nesta data; o Wrapper fixará uma versão estável 3.9.x no momento da
-implementação.
+extra do Gradle não traz benefício proporcional ao build inicial. O Wrapper do
+0.1a fixa Maven 3.9.16; mudar a linha principal exige decisão explícita.
 
 ### 6.3 Apache License 2.0
 
-Apache-2.0 é recomendada no lugar da MIT inicial. Continua permissiva e adiciona
-concessão explícita de patentes, relevante para contribuições empresariais. A
-troca deve ocorrer antes do primeiro código ou contribuição externa.
+Apache-2.0 foi adotada no lugar da MIT inicial. Continua permissiva e adiciona
+concessão explícita de patentes, relevante para contribuições empresariais. O
+texto oficial está em `LICENSE` e a atribuição do projeto em `NOTICE`.
 
 ## 7. Arquitetura e módulos
 
@@ -180,7 +179,7 @@ future -------/      validate -> transform                  future sinks
 | `rizoma-core` | Domínio, portas, pipeline, profiling, features, métricas, score, ranking, validação e transformação | JDK no 0.1 |
 | `rizoma-format-csv` | Sniffing/dialeto e leitura record-wise | Apache Commons CSV/IO |
 | `rizoma-format-excel` | Leitura segura e streaming de XLS/XLSX | Apache POI |
-| `rizoma-locale-ptbr` | Aliases e detectores CPF/CNPJ/CEP/telefone | Core, sem rede |
+| `rizoma-locale-ptbr` | Aliases e detectores semânticos brasileiros; no 0.1a, CPF e telefone | Core, sem rede |
 | `rizoma-cli` | Comandos, configuração, schema/report JSON e composição | Picocli/Jackson/adaptadores |
 | `rizoma-benchmarks` | Microbenchmarks fora dos artefatos de produção | JMH, criado só com código mensurável |
 
@@ -223,12 +222,15 @@ classDiagram
 - `StructureDetection`: formato, tabela/planilha, header, dialeto, charset,
   alternativas, confiança e evidências; aceita override explícito.
 - `Dataset`: cursor lazy, `AutoCloseable` e de passagem única, nunca lista total.
-- `Row`: localização e vetor posicional de `CellValue`, evitando mapa por linha.
-- `CellValue`: original, tipo do formato e flags; normalizações ficam separadas.
+- `Row`: localização de registro/linha física e vetor posicional de strings no
+  0.1a, evitando mapa por linha. `CellValue` tipado será introduzido somente
+  quando outro formato exigir metadados próprios.
 - `ColumnProfile`: agregados, estimativas, amostras e metadados de precisão.
 - `ColumnFeatures`: projeção imutável e compacta consumida pelo matching.
 - `SemanticTypeId`: id aberto e namespaced (`core:email`, `br:cpf`), não enum.
-- `TargetSchema`/`TargetField`: id/versão, nome, aliases, tipos, exemplos e regras.
+- `TargetSchema`/`TargetField`: id/versão/contexto/locale, nome, aliases, tipo
+  físico, conjunto de tipos semânticos, obrigatoriedade e exclusividade. O 0.1a
+  não aceita exemplos ou regras que seriam silenciosamente ignorados.
 - `MappingCandidate`: par origem/destino com score e explicação.
 - `MappingDecision`: candidato escolhido ou `UNMAPPED`, status e motivos.
 - `AnalysisResult`: perfis, rankings, decisões e avisos; não retém o dataset.
@@ -239,7 +241,9 @@ apresentada como exata.
 
 ## 9. Interfaces principais
 
-Trechos conceituais; não constituem código implementado nem API binária estável.
+Os contratos abaixo orientam a arquitetura. As assinaturas concretas do 0.1a
+estão no código e em `docs/contracts/JSON_CONTRACTS_0.1A.md`; ainda não há
+garantia de compatibilidade binária.
 
 ```java
 public interface DataReader {
@@ -256,20 +260,12 @@ public interface Dataset extends AutoCloseable {
 
 public interface SimilarityMetric<F> {
     MetricId id();
-    SimilarityEvidence compare(F source, F target);
+    double compare(F source, F target);
 }
 
 public interface SemanticDetector {
     SemanticTypeId type();
-    SemanticEvidence inspect(ColumnProfile profile);
-}
-
-public interface Profiler {
-    DatasetProfile profile(Dataset dataset, ProfilingOptions options);
-}
-
-public interface FeatureExtractor {
-    ColumnFeatures extract(ColumnProfile profile, FeatureContext context);
+    Accumulator newAccumulator(); // observa valor bruto transitoriamente
 }
 
 public interface ScoringStrategy {
@@ -299,7 +295,7 @@ Pipeline, candidate generator e threshold policy começam como classes concretas
 só variação externa ou estratégia legítima recebe interface. A knowledge base
 nunca grava silenciosamente durante scoring: feedback é operação explícita.
 
-### 9.1 API Java pretendida
+### 9.1 API Java implementada no 0.1a
 
 ```java
 MappingEngine engine = MappingEngine.builder()
@@ -312,17 +308,19 @@ AnalysisResult result = engine.analyze(
     new AnalysisRequest(source, targetSchema, options));
 ```
 
-Fonte e esquema pertencem à requisição, não ao estado mutável do engine. Uma
-instância configurada pode ser reutilizada com segurança.
+Fonte e esquema pertencem à requisição, não ao estado mutável do engine. A
+composição é imutável e permite reutilização sequencial. Segurança concorrente
+não é prometida porque readers e detectores injetados podem não ser thread-safe.
 
-### 9.2 CLI pretendida
+### 9.2 CLI implementada e comandos futuros
 
 ```text
 rizoma analyze clientes.csv --schema customer.schema.json --out report.json
-rizoma map clientes.xlsx --sheet Clientes --schema customer.schema.json
 rizoma explain report.json --column "CPF Cliente"
-rizoma dry-run clientes.xls --schema customer.schema.json --mapping mapping.json
 ```
+
+`map`, `import` e `dry-run` não são anunciados pela CLI no 0.1a. Seleção de
+header duplicado requer `--column-id cN`.
 
 `import` só será exposto quando ao menos um destino tiver semântica de falha,
 transação e idempotência documentadas.
@@ -369,9 +367,13 @@ aplica suficiência e conflitos; dry run nunca recebe porta de escrita.
 
 ## 11. Detecção de estrutura e normalização
 
-CSV considera BOM, charset permitido, delimitador, aspas/escape, consistência do
-número de células e possíveis linhas de preâmbulo. A detecção usa janela
-limitada e devolve alternativas quando ambígua.
+CSV considera BOM UTF-8, charset permitido, delimitador, aspas/escape e
+consistência do número de células. A detecção 0.1a usa janela limitada e exige
+override quando não encontra alternativa confiável; linhas de preâmbulo ficam
+fora deste incremento. O limite total de bytes é aplicado durante a leitura. O
+limite por campo é verificado quando Commons CSV entrega o token: como o parser
+não oferece limite anterior à alocação, um campo hostil ainda pode alocar até o
+limite total do arquivo, risco explícito para hardening 0.1b.
 
 Excel considera tipo real do contêiner, planilhas, linhas vazias, células
 mescladas, fórmulas e candidatos a header. Fórmulas nunca são avaliadas; valor
@@ -403,7 +405,9 @@ Stop words ficam desligadas por padrão: remover `cliente` pode apagar contexto.
 
 ### 11.2 Valores
 
-- CPF/CNPJ/CEP/telefone: dígitos e validação separada; shape não prova validade;
+- CPF/CEP/telefone: forma canônica e validação separada; shape não prova validade;
+- CNPJ: preservar letras e dígitos significativos. O formato alfanumérico entrou
+  em produção em 2026; o detector completo permanece fora do 0.1a;
 - e-mail: trim, sintaxe e domínio lowercase; local-part não é destruída;
 - datas: lista ordenada de formatos e locale; `01/02/2026` pode ficar ambígua;
 - moeda/percentual/número: separadores por locale e `BigDecimal`, não `double`;
@@ -439,11 +443,11 @@ dominantPatterns, boundedTokenFrequency
 maskedSamples, sampleSize, evidenceReliability
 ```
 
-Detectores genéricos: e-mail, data/datetime, booleano, UUID, URL, percentual,
-moeda, inteiro/decimal e código/identificador. O pack pt-BR contém CPF/CNPJ com
-checksum, CEP e telefone. Pessoa/endereço/cidade/estado/país são heurísticas
-fracas e não vencem contradição forte. CPF diferencia `shapeMatchRatio` de
-`checksumValidRatio`.
+No 0.1a, os detectores genéricos implementados são e-mail e data, além dos votos
+de tipo físico. O pack pt-BR implementa CPF com checksum e telefone
+conservador. CNPJ, CEP, UUID, URL, percentual, moeda e categorias como pessoa ou
+endereço permanecem planejados. CPF diferencia `shapeMatchRatio` de
+`checksumValidRatio`; onze dígitos sem formatação são ambíguos para telefone.
 
 Anomalias incluem tipo/padrão/comprimento raro, mistura de tipos, outlier
 robusto, nulidade/duplicidade incompatível, fórmula, conteúdo perigoso e linha
@@ -520,8 +524,10 @@ JW = Jaro + l * p * (1-Jaro)
 `l` é o prefixo comum, limitado normalmente a 4, e `p <= 0,1`. Para
 `MARTHA/MARHTA`, Jaro é aproximadamente `0,944` e Jaro-Winkler `0,961`.
 Funcionam bem para transposições e pequenos typos; Winkler pode supervalorizar
-prefixos genéricos como `cliente_`. O custo é aproximadamente linear em uma
-implementação com janela, mas alocação e busca serão medidas.
+prefixos genéricos como `cliente_`. Na implementação direta que busca uma
+janela para cada caractere, o pior caso é `O(m*n)`. Como a métrica ainda não foi
+implementada, não se promete custo linear; documentação e benchmark deverão
+corresponder ao algoritmo concreto adotado na fase posterior.
 
 ### 14.5 Cosine
 
@@ -588,19 +594,12 @@ Renormalização evita punir score por evidência indisponível; `coverage` impe
 que um único sinal alto pareça suficiente. Métricas correlacionadas formam um
 subscore lexical em vez de votos independentes.
 
-```text
-"CPF Cliente" -> customer.document
-lexical       0,82 * 0,30 = 0,246
-semantic      1,00 * 0,30 = 0,300
-physical type 1,00 * 0,10 = 0,100
-pattern       0,98 * 0,15 = 0,147
-distribution  0,90 * 0,05 = 0,045
-knowledge     0,80 * 0,10 = 0,080
-score final                  0,918
-```
-
-A explicação também lista Dice, Jaro-Winkler, Levenshtein normalizado,
-n-grama, taxa de checksums, N, pesos efetivos, normalizador e configuração.
+No 0.1a, Dice e Levenshtein normalizado são agregados em um único componente
+lexical correlacionado. Distribuição e histórico aparecem como indisponíveis,
+com contribuição zero e motivo, nunca com valores sintéticos. A explicação
+lista as duas métricas, evidência semântica/shape, N, peso, confiabilidade,
+contribuição, limitações e versão de configuração. Métricas futuras não são
+listadas como se tivessem participado.
 
 ### 15.2 Política de confiança
 
@@ -611,10 +610,11 @@ n-grama, taxa de checksums, N, pesos efetivos, normalizador e configuração.
 | `score >= 0,50` | `LOW_CONFIDENCE` |
 | demais casos | `NO_MATCH` |
 
-`margin = bestScore-secondBestScore`. Com um único destino, margem é
-indisponível e requer regra específica. Antes de calibração, `AUTO_MAP` fica
-desligado por padrão na CLI. Contradições fortes incluem semântica incompatível,
-constraint impossível ou colisão em destino exclusivo.
+`margin = bestScore-secondBestScore` entre candidatos elegíveis, antes do corte
+top-K do relatório. Com um único candidato elegível, margem é indisponível e
+bloqueia automação. Antes de calibração, `AUTO_MAP` fica desligado por padrão no
+próprio core. Contradições fortes incluem semântica incompatível ou colisão em
+destino exclusivo; constraints de importação ainda não são executadas.
 
 ## 16. Matching global
 
@@ -666,6 +666,11 @@ processadas, válidas, inválidas, warnings, erros e exemplos mascarados.
 `MigrationSink` declara transação, rollback, idempotência, upsert e batch
 máximo. O engine não promete exactly-once genericamente. Falha parcial registra
 o último lote confirmado e estado terminal auditável.
+
+Um plano futuro de execução deve ficar vinculado ao fingerprint do conteúdo de
+origem, à versão/fingerprint do schema e à versão da configuração analisada.
+Alteração relevante invalida o plano ou exige nova análise. O 0.1a registra
+essas identidades em `AnalysisResult`, mas não implementa snapshot ou migração.
 
 ## 19. Performance, streaming e sampling
 
@@ -804,26 +809,27 @@ implementação mensurável.
 
 ```text
 rizoma/
+├── .github/workflows/ci.yml
 ├── pom.xml
 ├── mvnw, mvnw.cmd, .mvn/wrapper/
 ├── LICENSE, NOTICE, README.md
-├── CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, CHANGELOG.md
 ├── docs/
 │   ├── architecture/TECHNICAL_SPECIFICATION.md
+│   ├── contracts/JSON_CONTRACTS_0.1A.md
 │   ├── memory-bank/{CURRENT,DECISIONS,LEARNINGS}.md
-│   ├── roadmap.md
-│   ├── mathematics.md       # extraído quando a seção crescer
-│   └── examples/
+│   ├── testing/CORPUS_0.1A.md
+│   └── roadmap.md
+├── examples/
+├── scripts/volume-smoke.sh
 ├── rizoma-core/
 ├── rizoma-format-csv/
-├── rizoma-format-excel/
 ├── rizoma-locale-ptbr/
-├── rizoma-cli/
-└── rizoma-benchmarks/       # somente quando houver código
+└── rizoma-cli/
 ```
 
 Módulos serão criados quando receberem ao menos uma classe funcional e testes,
-nunca como cascas vazias.
+nunca como cascas vazias. Documentos comunitários restantes e módulos Excel/
+benchmarks serão adicionados nos incrementos que lhes derem conteúdo real.
 
 ## 25. Primeiro incremento vertical e critérios de aceite
 
@@ -853,6 +859,16 @@ Critérios de aceite:
 7. Amostras e erros são mascarados; limites de bytes/linhas/colunas/célula são
    testados.
 8. README contém quickstart executado no CI e `CURRENT.md` reflete o estado.
+9. A API funciona sem inicializar CLI/servidor; CLI e biblioteca produzem as
+   mesmas decisões sem duplicar regras.
+10. O core mede no mínimo 85% de linhas e 80% de branches, sem exclusões
+    artificiais, e não produz NaN/infinito.
+11. Java 21 e 25 executam `verify`, sempre compilando com `--release 21`; a
+    execução local e a execução do CI são reportadas separadamente.
+12. Headers duplicados exigem identidade/posição; recursos fecham também em
+    falha; relatórios e mensagens não expõem células brutas por padrão.
+13. O teste de volume confirma `rowsProcessed` e resultado não vazio, aplica
+    `-Xmx256m` à JVM do motor e distingue RSS de heap.
 
 ### 25.2 Incremento 0.1b — Excel e release 0.1
 
@@ -929,3 +945,5 @@ futura impor complexidade presente.
 - [Apache POI Spreadsheet APIs](https://poi.apache.org/components/spreadsheet/)
 - [Apache POI event-model HOWTO](https://poi.apache.org/components/spreadsheet/how-to.html)
 - [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+- [Receita Federal — CNPJ Alfanumérico](https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/acoes-e-programas/programas-e-atividades/cnpj-alfanumerico)
+- [Receita Federal — documentos técnicos do CNPJ](https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/documentos-tecnicos/cnpj)

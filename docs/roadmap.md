@@ -13,17 +13,20 @@ O roadmap detalhado e seus criterios de aceite ficam na
 - [x] Definir scoring explicavel, confidence conservadora e performance limitada.
 - [x] Revisar contradicoes, riscos e complexidade desnecessaria.
 
-## 0.1a: analise CSV explicavel
+## 0.1a: analise CSV explicavel (implementacao local concluida)
 
-- [ ] Maven Wrapper e build multimodulo minimo.
-- [ ] Core com dominio e cursor de dataset.
-- [ ] Reader CSV streaming.
-- [ ] Normalizacao generica e pack pt-BR inicial.
-- [ ] Profiling limitado e tipos CPF/e-mail/telefone/data.
-- [ ] Dice e Levenshtein normalizado.
-- [ ] Score, ranking, confidence e explanation.
-- [ ] CLI `analyze` e `explain` com relatorio JSON.
-- [ ] Testes de unidade, propriedade, integracao e 1M de linhas.
+- [x] Maven Wrapper 3.9.16 e build multimodulo minimo.
+- [x] Core com dominio e cursor de dataset de passagem unica.
+- [x] Reader CSV streaming.
+- [x] Normalizacao generica e pack pt-BR inicial.
+- [x] Profiling limitado e tipos CPF/e-mail/telefone/data.
+- [x] Dice e Levenshtein normalizado.
+- [x] Score, ranking, confidence e explanation.
+- [x] CLI `analyze` e `explain` com relatorio JSON.
+- [x] Testes de unidade, propriedade, contrato, integracao e 1M de linhas.
+- [x] `verify` local em Java 21 e Java 25 com `--release 21`.
+- [ ] Confirmar a execucao da matriz 21/25 e do quickstart no GitHub Actions
+  depois que as alteracoes forem autorizadas para commit/push.
 
 ## Versoes seguintes
 

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["21", "25"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: Verify with Java ${{ matrix.java }}
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Execute documented quickstart
+        if: matrix.java == '21'
+        run: |
+          java -jar rizoma-cli/target/rizoma-cli-0.1.0-SNAPSHOT-all.jar analyze examples/clientes.csv --schema examples/customer.schema.json --out target/quickstart-report.json
+          java -jar rizoma-cli/target/rizoma-cli-0.1.0-SNAPSHOT-all.jar explain target/quickstart-report.json --column "CPF Cliente"

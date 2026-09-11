@@ -5,13 +5,21 @@
 Projetar e implementar o Rizoma: um motor Java confiavel, inteligente e
 automatizado para importacao de planilhas e CSV.
 
-## Estado inicial
+## Contexto historico
 
-- O produto ainda nao foi implementado.
-- A unica decisao tecnica fechada e a linguagem Java.
-- Java 21 ou superior e uma hipotese forte, nao uma decisao definitiva.
-- Framework, build tool, modulos, interfaces e persistencia devem ser definidos
-  a partir dos requisitos, com justificativas registradas no memory bank.
+O repositorio nasceu sem implementacao e apenas com Java definido. A etapa de
+especificacao encerrou as decisoes iniciais; este contexto nao substitui o
+estado vigente.
+
+## Decisoes vigentes
+
+- Baseline Java 21 com `--release 21`, sem preview, e CI tambem em Java 25.
+- Maven 3.9.x fixado pelo Maven Wrapper.
+- Monolito modular de biblioteca, core somente JDK no 0.1 e adaptadores
+  separados para formatos, locale pt-BR e CLI.
+- Pipeline deterministico, explicavel, sequencial e limitado em memoria.
+- Especificacao: `docs/architecture/TECHNICAL_SPECIFICATION.md`.
+- Estado e proximo passo: `docs/memory-bank/CURRENT.md`.
 
 ## Forma de trabalho
 
@@ -28,13 +36,11 @@ automatizado para importacao de planilhas e CSV.
 - Nao use force-push nem reescreva historico compartilhado.
 - Commits e push fazem parte da entrega quando solicitados.
 
-## Primeira tarefa do agente
+## Proxima tarefa executavel
 
-1. Elicitar ou inferir os casos de uso essenciais.
-2. Comparar alternativas minimas de arquitetura e toolchain Java.
-3. Decidir e registrar a versao Java e o build tool.
-4. Definir o primeiro incremento vertical e seus criterios de aceite.
-5. Implementar somente depois dessas decisoes.
+Obter a evidencia remota do CI do incremento 0.1a quando commit/push forem
+solicitados. Em seguida, implementar 0.1b (XLS/XLSX e hardening de arquivos)
+sem antecipar modulos posteriores.
 
 ## Criterio de conclusao
 

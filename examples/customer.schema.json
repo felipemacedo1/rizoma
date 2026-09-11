@@ -1,0 +1,16 @@
+{
+  "formatVersion": "1.0",
+  "schemaId": "customer",
+  "schemaVersion": "1.0",
+  "context": "customer onboarding",
+  "locale": "pt-BR",
+  "fields": [
+    {"id":"customer.name","displayName":"Nome","aliases":["Nome Completo","Nome Cliente"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"customer.document","displayName":"CPF","aliases":["CPF Cliente","Documento"],"physicalType":"TEXT","semanticTypes":["br:cpf"],"required":true},
+    {"id":"customer.email","displayName":"E-mail","aliases":["Email","Correio Eletrônico"],"physicalType":"TEXT","semanticTypes":["core:email"],"required":false},
+    {"id":"customer.phone","displayName":"Telefone","aliases":["Celular","Contato"],"physicalType":"TEXT","semanticTypes":["br:phone"],"required":false},
+    {"id":"customer.birthDate","displayName":"Data de Nascimento","aliases":["Nascimento","Data Nasc."],"physicalType":"DATE","semanticTypes":["core:date"],"required":false},
+    {"id":"customer.address","displayName":"Endereço","aliases":["Endereço Residencial"],"physicalType":"TEXT","semanticTypes":[],"required":false},
+    {"id":"customer.postalCode","displayName":"CEP","aliases":["Código Postal"],"physicalType":"TEXT","semanticTypes":[],"required":false}
+  ]
+}

@@ -56,4 +56,32 @@ suporte minimo de formatos com uma primeira entrega vertical pequena.
 ## 2026-09-10 - Apache License 2.0 recomendada
 
 Apache-2.0 foi escolhida por permissividade e concessao explicita de patentes.
-A LICENSE existente ainda deve ser substituida antes do primeiro codigo.
+A decisao foi executada em 2026-09-11 com o texto oficial e `NOTICE` proprio.
+
+## 2026-09-11 - Contratos corretivos do 0.1a
+
+CNPJ pode conter letras significativas e nao sera normalizado como somente
+digitos. AnalysisResult registra fingerprints de origem, schema e configuracao
+para permitir invalidar planos futuros. Jaro/Jaro-Winkler permanece planejado e
+tera complexidade documentada conforme a implementacao real, incluindo pior
+caso da busca em janela.
+
+## 2026-09-11 - Contratos implementados no 0.1a
+
+O schema JSON e o AnalysisResult usam `formatVersion` 1.0 e rejeitam
+propriedades desconhecidas. Colunas usam identidade posicional `cN`. Um campo
+destino aceita conjunto de tipos semanticos. Obrigatoriedade e preservada, mas
+nao validada; exclusividade participa apenas da deteccao de conflitos.
+
+Detectores recebem o valor bruto somente durante acumulacao e publicam apenas
+agregados. As amostras sao sempre protegidas, independentemente do acerto do
+detector. O fingerprint da origem e comparado antes e depois da analise.
+
+Maven Wrapper foi fixado em 3.9.16. Dependencias diretas do 0.1a: Commons CSV
+1.14.1, Commons IO 2.22.0, Jackson 2.21.6, Picocli 4.7.7 e JUnit 5.14.4. JaCoCo
+0.8.15 aplica gates de 85% de linhas e 80% de branches no core.
+
+Dice e Levenshtein sao um unico subscore lexical correlacionado. A
+confiabilidade de evidencia de conteudo e `min(1, N/minEvidence) *
+(1-ambiguous/N)`. Margem usa todos os candidatos elegiveis antes do top-K;
+ausencia de evidencia causa abstencao; `AUTO_MAP` e falso no default do core.
