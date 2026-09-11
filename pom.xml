@@ -16,6 +16,7 @@
   <modules>
     <module>rizoma-core</module>
     <module>rizoma-format-csv</module>
+    <module>rizoma-format-excel</module>
     <module>rizoma-locale-ptbr</module>
     <module>rizoma-cli</module>
   </modules>
@@ -28,6 +29,9 @@
     <jackson.version>2.21.6</jackson.version>
     <commons.csv.version>1.14.1</commons.csv.version>
     <commons.io.version>2.22.0</commons.io.version>
+    <commons.compress.version>1.28.0</commons.compress.version>
+    <poi.version>5.5.1</poi.version>
+    <log4j.version>2.24.3</log4j.version>
     <picocli.version>4.7.7</picocli.version>
     <compiler.plugin.version>3.14.1</compiler.plugin.version>
     <surefire.plugin.version>3.6.0</surefire.plugin.version>

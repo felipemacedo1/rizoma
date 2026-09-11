@@ -1,12 +1,17 @@
 # Rizoma
 
 Rizoma e um motor Java de ingestao, profiling e sugestao de mapeamento de dados.
-O incremento 0.1a recebe um CSV e um esquema conhecido e produz um relatorio
-explicavel, sem escrever em qualquer sistema de destino.
+A implementacao atual recebe CSV, XLS ou XLSX e um esquema conhecido e produz
+um relatorio explicavel, sem escrever em qualquer sistema de destino.
 
 ## O que funciona hoje
 
 - CSV record-wise com UTF-8 (BOM inclusive), ISO-8859-1 ou Windows-1252;
+- XLSX em streaming por worksheet e XLS legado com carga limitada por bytes;
+- selecao explicita de planilha quando o workbook possui mais de uma;
+- datas Excel em ISO, gaps de celulas e formulas sem avaliacao;
+- preflight XLSX contra excesso de entradas, expansao, razao de compressao,
+  paths inseguros, macros e relacionamentos externos;
 - delimitador detectado entre virgula, ponto e virgula, tab e pipe, com override;
 - aspas, aspas escapadas, delimitadores e quebras de linha dentro de campos;
 - colunas identificadas pela posicao (`c0`, `c1`...), inclusive com headers iguais;
@@ -65,7 +70,7 @@ List<SemanticDetector> detectors = new ArrayList<>(CoreSemanticDetectors.default
 detectors.addAll(PtBrDetectors.defaults());
 
 MappingEngine engine = MappingEngine.builder()
-    .readers(List.of(new CsvDataReader()))
+    .readers(List.of(new ExcelDataReader(), new CsvDataReader()))
     .semanticDetectors(detectors)
     .normalizer(PtBrHeaderRules.normalizer())
     .configuration(EngineConfig.defaults())
@@ -77,7 +82,8 @@ TargetSchema schema = new TargetSchema("customer", "1", "customer", "pt-BR", Lis
 ));
 
 AnalysisResult result = engine.analyze(new AnalysisRequest(
-    new PathTabularSource(Path.of("clientes.csv")), schema, AnalysisOptions.defaults()));
+    new PathTabularSource(Path.of("clientes.xlsx")), schema,
+    new AnalysisOptions(Map.of("sheet", "Clientes", "formula", "cached"), 42L)));
 
 var best = result.candidatesByColumn().get("c0").getFirst();
 best.components().forEach(component ->
@@ -102,7 +108,7 @@ injetados podem possuir restricoes proprias.
 - componentes indisponiveis: valor `null`, contribuicao zero e motivo explicito.
 
 O formato do esquema e do relatorio esta em
-[docs/contracts/JSON_CONTRACTS_0.1A.md](docs/contracts/JSON_CONTRACTS_0.1A.md).
+[docs/contracts/JSON_CONTRACTS_0.1B.md](docs/contracts/JSON_CONTRACTS_0.1B.md).
 
 ## Limites e seguranca
 
@@ -111,24 +117,40 @@ caracteres por campo, 10.000 por header, 20 amostras protegidas, top-3
 candidatos, 100 avisos, 100 erros seguros e 10 minutos. Todos sao configuraveis
 pela API; falhas estruturais sao fail-fast no 0.1a, portanto o array de erros
 de um resultado bem-sucedido normalmente fica vazio.
-O limite de bytes e aplicado no stream; o limite de campo e conferido assim que
-o parser entrega o token. Apache Commons CSV nao oferece limite pre-alocacao por
-campo, portanto um campo hostil ainda pode causar uma alocacao ate o limite de
-bytes do arquivo. Este risco esta documentado e permanece para hardening 0.1b.
+O limite de bytes e aplicado antes e durante CSV. Apache Commons CSV nao oferece
+limite pre-alocacao por campo, portanto um campo hostil ainda pode causar uma
+alocacao ate o limite total do arquivo.
+
+Para XLSX, os defaults adicionais sao: 10.000 entradas ZIP, 512 MiB expandidos,
+128 MiB por entrada, razao compactado/expandido minima de 0,01 e 100 planilhas.
+XLS legado usa o modelo em memoria do POI com teto proprio de 20 MiB por padrao.
+Esses limites podem ser alterados por `AnalysisOptions.readerOptions`. Fontes
+XLSX locais sao abertas read-only por acesso aleatorio; fontes nao locais usam
+temporario limitado, fechado e removido. O parser XML desabilita DTD e entidades
+externas. Formulas aceitam `cached` (default), `expression` ou `reject`; nenhuma
+politica executa a formula. Em workbooks com mais de uma planilha, use
+`--sheet "Nome"` ou `--sheet 0`.
 
 Valores brutos so existem transitoriamente para detectores autorizados. O
 relatorio contem agregados e amostras como `<redacted:length=N>`, mesmo quando o
-tipo semantico nao foi reconhecido. O motor nao usa rede, nao altera o CSV e
+tipo semantico nao foi reconhecido. O motor nao usa rede, nao altera a fonte e
 compara o SHA-256 antes e depois da leitura para detectar mudanca durante a
 analise.
 
 ## Limitacoes atuais
 
-XLS/XLSX, CNPJ completo, CEP semantico, Jaro-Winkler, distribuicoes/cardinalidade,
+CNPJ completo, CEP semantico, Jaro-Winkler, distribuicoes/cardinalidade,
 anomalias por linha, transformacao, validacao de importacao, dry run, destino,
 feedback persistente, matching global, plugins dinamicos, ML e LLM nao estao
 implementados. O arquivo de 1 milhao de linhas nao e versionado; execute
 `scripts/volume-smoke.sh` para gera-lo em streaming e valida-lo com `-Xmx256m`.
+
+No XLSX, a worksheet e lida em streaming, mas a tabela de strings compartilhadas
+do POI ainda ocupa memoria e fica protegida indiretamente pelo limite expandido
+por entrada. Celulas mescladas nao sao propagadas: somente a ancora possui valor.
+O XLS legado nao e streaming. Valores `cached` de formula podem estar obsoletos,
+pois o Rizoma deliberadamente nao recalcula workbooks. Os artefatos permanecem
+`SNAPSHOT` e ainda nao foram publicados em registry ou release.
 
 ## Documentacao
 

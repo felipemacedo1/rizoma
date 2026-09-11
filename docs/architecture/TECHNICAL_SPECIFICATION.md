@@ -1,10 +1,11 @@
 # Rizoma — especificação técnica e arquitetura recomendada
 
-Status: **incremento 0.1a implementado e verificado localmente; CI remoto pendente**
+Status: **incrementos 0.1a e 0.1b implementados e verificados localmente; CI remoto pendente**
 
 Data: 2026-09-10
 
-Estado do produto nesta publicação: **nenhum código de produção implementado**.
+Estado do produto neste workspace: **incrementos 0.1a e 0.1b implementados e
+verificados localmente; release publica ainda nao criada**.
 
 ## 1. Resumo executivo
 
@@ -23,7 +24,9 @@ estado global.
 |---|---|
 | Especificação, revisão crítica e arquitetura final | **IMPLEMENTADO** |
 | Decisões de Java, build, licença e primeiro incremento | **IMPLEMENTADO** |
-| Motor, CLI, readers, testes executáveis e benchmarks | **NÃO IMPLEMENTADO** |
+| Motor, CLI, readers CSV/XLS/XLSX e testes executáveis | **IMPLEMENTADO E VERIFICADO LOCALMENTE** |
+| Teste de volume CSV com 1 milhão de registros | **IMPLEMENTADO E VERIFICADO LOCALMENTE** |
+| Microbenchmarks JMH | **PLANEJADO / NÃO IMPLEMENTADO** |
 | Persistência, REST, Spring, UI, ML e LLM | **PLANEJADO** |
 
 ## 2. Problema, objetivos e escopo
@@ -375,9 +378,26 @@ limite por campo é verificado quando Commons CSV entrega o token: como o parser
 não oferece limite anterior à alocação, um campo hostil ainda pode alocar até o
 limite total do arquivo, risco explícito para hardening 0.1b.
 
-Excel considera tipo real do contêiner, planilhas, linhas vazias, células
-mescladas, fórmulas e candidatos a header. Fórmulas nunca são avaliadas; valor
-cacheado ou expressão podem ser expostos com flag e política configurável.
+Excel detecta a assinatura real OLE2/OOXML, independentemente da extensao. XLSX
+usa cursor StAX sobre a worksheet; fontes locais abrem o pacote em modo read-only
+e fontes nao locais usam spool temporario limitado e removido. XLS legado usa o
+user model HSSF com teto proprio de 20 MiB porque um cursor síncrono sobre o
+event model exigiria spool ou uma camada produtora concorrente prematura.
+
+Mais de uma planilha exige selecao por nome exato ou indice. Gaps de celula sao
+preenchidos sem perder posicao e linhas guardam o numero fisico. Formulas nunca
+sao avaliadas: a politica escolhe cache, expressao ou rejeicao. Datas com estilo
+Excel sao convertidas para ISO local; formatos numericos como `000` preservam
+zeros de exibicao. Celulas mescladas nao propagam o valor da ancora no 0.1b.
+Linhas vazias iniciais sao toleradas ate `maxPreambleRows`; preambulos textuais
+nao sao inferidos e exigem que a origem seja ajustada. O preview examina no
+maximo 1.000 registros fisicos e reabre a fonte para o profiling.
+
+O preflight OOXML limita entradas, bytes expandidos totais/por entrada e razao
+de compressao, rejeita path traversal, symlinks, entradas ilegíveis, macros e
+relacionamentos externos. DTD e entidades XML externas ficam desabilitados.
+`ReadOnlySharedStringsTable` ainda materializa strings unicas; o risco e contido
+indiretamente pelo limite da entrada `sharedStrings.xml`, nao eliminado.
 
 Header usa proporção de texto não vazio, unicidade dos nomes e compatibilidade
 com tipos das linhas seguintes. `maxPreambleRows` limita a busca.
@@ -870,18 +890,19 @@ Critérios de aceite:
 13. O teste de volume confirma `rowsProcessed` e resultado não vazio, aplica
     `-Xmx256m` à JVM do motor e distingue RSS de heap.
 
-### 25.2 Incremento 0.1b — Excel e release 0.1
+### 25.2 Incremento 0.1b — Excel e candidata a release 0.1
 
-Adiciona XLS/XLSX pelo mesmo contrato, event model onde viável, seleção de
-planilha, datas, gaps, fórmulas e limites ZIP. A release 0.1 só termina quando os
-três formatos passam pela mesma suite contratual.
+Adiciona XLS/XLSX pelo mesmo contrato, streaming StAX em XLSX, seleção de
+planilha, datas, gaps, fórmulas e limites ZIP. CSV/XLS/XLSX passam pela mesma
+suite de mapeamento. Criar tag, publicar artefatos ou anunciar release permanece
+uma acao externa separada e exige autorizacao explicita.
 
 ## 26. Roadmap
 
 | Versão | Entrega verificável |
 |---|---|
 | 0.1a | Vertical CSV com profiling, normalização, detectores, ranking e explain |
-| 0.1b | XLS/XLSX, segurança e paridade; publica 0.1 |
+| 0.1b | XLS/XLSX, segurança e paridade; prepara candidata a release 0.1 |
 | 0.2 | Métricas restantes, perfis avançados, anomalias, eventos e corpus |
 | 0.3 | Transformação, validação, dry run e sink de arquivo seguro |
 | 0.4 | Feedback e knowledge base em memória/arquivo |

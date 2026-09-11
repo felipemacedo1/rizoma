@@ -17,3 +17,10 @@
   bytes antecipado com verificacao pos-token e registrar o risco restante.
 - Shade deve anexar um artefato `-all`, nao substituir o JAR principal; isso
   evita sombrear novamente um uber-JAR em verificacoes Maven repetidas.
+- `java.util.zip.ZipInputStream` pode rejeitar ZIP64 valido produzido por
+  SXSSF; Commons Compress le o mesmo arquivo e deve ser usado no preflight
+  OOXML.
+- Streaming da worksheet XLSX nao torna todo o workbook O(1): shared strings
+  do POI ainda ocupam memoria e precisam de limite expandido explicito.
+- Abrir `OPCPackage` por arquivo read-only evita o custo de memoria do overload
+  de `InputStream`; fontes nao locais precisam de spool limitado e limpeza.

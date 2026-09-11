@@ -16,7 +16,7 @@ estado vigente.
 - Baseline Java 21 com `--release 21`, sem preview, e CI tambem em Java 25.
 - Maven 3.9.x fixado pelo Maven Wrapper.
 - Monolito modular de biblioteca, core somente JDK no 0.1 e adaptadores
-  separados para formatos, locale pt-BR e CLI.
+  separados para CSV, Excel, locale pt-BR e CLI.
 - Pipeline deterministico, explicavel, sequencial e limitado em memoria.
 - Especificacao: `docs/architecture/TECHNICAL_SPECIFICATION.md`.
 - Estado e proximo passo: `docs/memory-bank/CURRENT.md`.
@@ -38,9 +38,10 @@ estado vigente.
 
 ## Proxima tarefa executavel
 
-Reexecutar o CI remoto do incremento 0.1a depois que o bloqueio de cobranca da
-conta GitHub for resolvido. Em seguida, implementar 0.1b (XLS/XLSX e hardening
-de arquivos) sem antecipar modulos posteriores.
+Reexecutar o CI remoto dos incrementos 0.1a/0.1b depois que o bloqueio de
+cobranca da conta GitHub for resolvido. Com autorizacao separada, preparar a
+release 0.1; sem ela, o proximo incremento de codigo e 0.2 (metricas e profiling
+avancado), sem antecipar transformacao ou destinos.
 
 ## Criterio de conclusao
 

@@ -85,3 +85,21 @@ Dice e Levenshtein sao um unico subscore lexical correlacionado. A
 confiabilidade de evidencia de conteudo e `min(1, N/minEvidence) *
 (1-ambiguous/N)`. Margem usa todos os candidatos elegiveis antes do top-K;
 ausencia de evidencia causa abstencao; `AUTO_MAP` e falso no default do core.
+
+## 2026-09-11 - Estrategia Excel do 0.1b
+
+`rizoma-format-excel` usa Apache POI 5.5.1 sem acoplar o core ao POI. XLSX e
+lido por StAX sobre a worksheet e passa antes por preflight ZIP com Commons
+Compress 1.28.0. Fontes locais usam acesso aleatorio read-only; fontes nao
+locais usam spool temporario limitado e removido. A tabela de shared strings do
+POI ainda e materializada e esse risco e limitado por tamanho expandido.
+
+XLS legado usa o user model HSSF com teto proprio default de 20 MiB. Adotar o
+event model HSSF exigiria produtor concorrente ou spool intermediario para
+oferecer o cursor sincrono do core; essa complexidade nao foi introduzida sem
+evidencia de demanda. Formulas nunca sao avaliadas e usam politica `cached`,
+`expression` ou `reject`.
+
+O `AnalysisResult` passou a 1.1 para incluir atributos seguros de estrutura,
+como indice da planilha e linha de inicio. O fingerprint de configuracao agora
+inclui reader options e seed. `explain` continua lendo 1.0 e 1.1.

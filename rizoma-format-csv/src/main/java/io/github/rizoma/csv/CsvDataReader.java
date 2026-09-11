@@ -40,6 +40,7 @@ public final class CsvDataReader implements DataReader {
     }
 
     @Override public SourceStructure detect(TabularSource source, AnalysisOptions options, EngineLimits limits) {
+        validateOptions(options);
         Charset charset = charset(options);
         Character delimiter = explicitDelimiter(options);
         var warnings = new ArrayList<String>();
@@ -67,6 +68,7 @@ public final class CsvDataReader implements DataReader {
 
     @Override public Dataset open(TabularSource source, SourceStructure structure,
                                   AnalysisOptions options, EngineLimits limits) {
+        validateOptions(options);
         try {
             Charset charset = Charset.forName(structure.charset());
             char delimiter = parseDelimiter(structure.delimiter());
@@ -165,6 +167,15 @@ public final class CsvDataReader implements DataReader {
     private static boolean isEmpty(TabularSource source) {
         try { return source.size() == 0; }
         catch (IOException e) { throw new EngineException("CSV_DETECTION_FAILED", "CSV source size could not be read", e); }
+    }
+
+    private static void validateOptions(AnalysisOptions options) {
+        Set<String> supported = Set.of("charset", "delimiter", "header");
+        for (String option : options.readerOptions().keySet()) {
+            if (!supported.contains(option)) {
+                throw new EngineException("INVALID_READER_OPTION", "reader option is not supported for CSV: " + option);
+            }
+        }
     }
 
     private static final class CsvDataset implements Dataset {

@@ -94,7 +94,9 @@ public final class MappingEngine {
                 throw new EngineException("SOURCE_CHANGED", "source content changed during analysis");
             }
             String schemaFingerprint = fingerprint(schemaCanonical(request.targetSchema()));
-            String configFingerprint = fingerprint(configCanonical(config));
+            String configFingerprint = fingerprint(configCanonical(config) + '|'
+                    + new java.util.TreeMap<>(request.options().readerOptions()) + '|'
+                    + request.options().sampleSeed());
             return score(request, structure, rows, profiles, warnings,
                     sourceFingerprint, schemaFingerprint, configFingerprint);
         } catch (EngineException e) {
@@ -143,7 +145,7 @@ public final class MappingEngine {
             }
         }
 
-        return new AnalysisResult("1.0", ENGINE_VERSION, "UNCALIBRATED",
+        return new AnalysisResult("1.1", ENGINE_VERSION, "UNCALIBRATED",
                 request.source().id(), sourceFingerprint, request.targetSchema().id(),
                 request.targetSchema().version(), schemaFingerprint, config.version(), configFingerprint,
                 structure, rows, profiles, allCandidates, decisions, unmatched, conflicts,
@@ -171,8 +173,8 @@ public final class MappingEngine {
             components.add(available("pattern", accepted.shapeScore(), accepted.reliability(),
                     "shape matches " + accepted.shapeMatches() + "/" + accepted.observed(), List.of()));
         }
-        components.add(unavailable("distribution", "target distribution is not provided in 0.1a"));
-        components.add(unavailable("history", "mapping history is not implemented in 0.1a"));
+        components.add(unavailable("distribution", "target distribution is not provided"));
+        components.add(unavailable("history", "mapping history is not implemented"));
 
         for (var evidence : features.semanticEvidence().values()) {
             if (evidence.strongIdentity() && !target.semanticTypes().contains(evidence.type())) {

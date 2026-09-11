@@ -3,7 +3,7 @@ package io.github.rizoma.core;
 import java.util.List;
 import java.util.Map;
 
-/** Complete, JSON-friendly and explainable output of analysis 0.1a. */
+/** Complete, JSON-friendly and explainable output of analysis. */
 public record AnalysisResult(String formatVersion, String engineVersion, String calibration,
         String sourceId, String sourceFingerprint, String schemaId, String schemaVersion,
         String schemaFingerprint, String configurationVersion, String configurationFingerprint,

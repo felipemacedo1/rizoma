@@ -22,8 +22,12 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.Workbook;
 
 class RizomaCliTest {
+    static { java.util.logging.Logger.getLogger("org.apache.poi").setLevel(java.util.logging.Level.SEVERE); }
     @TempDir Path temporary;
 
     @Test void mainFixtureProducesSevenTopOneMappingsAndExplainUsesSameReport() throws Exception {
@@ -130,6 +134,59 @@ class RizomaCliTest {
         assertEquals(original, Files.readString(source));
     }
 
+    @Test void analyzeSupportsXlsxThroughTheSameCliAndEnginePipeline() throws Exception {
+        Path source = temporary.resolve("clientes.xlsx");
+        try (var workbook = new XSSFWorkbook()) {
+            var sheet = workbook.createSheet("Clientes");
+            var header = sheet.createRow(0);
+            header.createCell(0).setCellValue("Nome Completo");
+            header.createCell(1).setCellValue("Documento");
+            var row = sheet.createRow(1);
+            row.createCell(0).setCellValue("Ana Maria");
+            row.createCell(1).setCellValue("529.982.247-25");
+            try (var output = Files.newOutputStream(source)) { workbook.write(output); }
+        }
+        Path report = temporary.resolve("xlsx-report.json");
+        assertEquals(0, run("analyze", source.toString(), "--schema", example("customer.schema.json").toString(),
+                "--out", report.toString(), "--header", "first", "--sheet", "Clientes"));
+        AnalysisResult result = JsonSupport.MAPPER.readValue(report.toFile(), AnalysisResult.class);
+        assertEquals("XLSX", result.structure().format());
+        assertEquals("0", result.structure().attributes().get("sheetIndex"));
+        assertEquals(1, result.rowsProcessed());
+        assertTop(result, "c0", "customer.name");
+        assertTop(result, "c1", "customer.document");
+        assertFalse(Files.readString(report).contains("529.982.247-25"));
+    }
+
+    @Test void csvXlsAndXlsxProduceTheSameSevenTopMappings() throws Exception {
+        Path csvReport = temporary.resolve("csv.json");
+        assertEquals(0, run("analyze", example("clientes.csv").toString(), "--schema",
+                example("customer.schema.json").toString(), "--out", csvReport.toString()));
+        AnalysisResult csv = JsonSupport.MAPPER.readValue(csvReport.toFile(), AnalysisResult.class);
+
+        for (Workbook workbook : List.of(new HSSFWorkbook(), new XSSFWorkbook())) {
+            String extension = workbook instanceof HSSFWorkbook ? ".xls" : ".xlsx";
+            Path source = temporary.resolve("parity" + extension);
+            writeParityWorkbook(workbook, source);
+            Path report = temporary.resolve("parity" + extension + ".json");
+            assertEquals(0, run("analyze", source.toString(), "--schema",
+                    example("customer.schema.json").toString(), "--out", report.toString(), "--header", "first"));
+            AnalysisResult excel = JsonSupport.MAPPER.readValue(report.toFile(), AnalysisResult.class);
+            assertEquals(csv.candidatesByColumn().keySet(), excel.candidatesByColumn().keySet());
+            for (String column : csv.candidatesByColumn().keySet()) {
+                assertEquals(csv.candidatesByColumn().get(column).getFirst().targetFieldId(),
+                        excel.candidatesByColumn().get(column).getFirst().targetFieldId());
+            }
+        }
+    }
+
+    @Test void formatSpecificOptionsAreRejectedAsInvalidInput() throws Exception {
+        Path report = temporary.resolve("invalid-option.json");
+        assertEquals(RizomaCli.INVALID_INPUT, run("analyze", example("clientes.csv").toString(),
+                "--schema", example("customer.schema.json").toString(), "--out", report.toString(),
+                "--sheet", "0"));
+    }
+
     private static AnalysisResult libraryAnalyze(Path source, Path schemaPath) throws Exception {
         List<SemanticDetector> detectors = new ArrayList<>(CoreSemanticDetectors.defaults());
         detectors.addAll(PtBrDetectors.defaults());
@@ -147,5 +204,23 @@ class RizomaCliTest {
 
     private static int run(String... args) {
         return RizomaCli.execute(args, new PrintWriter(new StringWriter(), true), new PrintWriter(new StringWriter(), true));
+    }
+
+    private static void writeParityWorkbook(Workbook workbook, Path path) throws Exception {
+        try (workbook) {
+            if (workbook instanceof HSSFWorkbook legacy) legacy.createInformationProperties();
+            var sheet = workbook.createSheet("Clientes");
+            String[] headers = {"Nome Completo", "CPF Cliente", "E-mail", "Celular", "Nascimento",
+                    "Endereço Residencial", "CEP"};
+            String[] values = {"Ana Maria", "529.982.247-25", "ana@example.test", "(11) 99999-9999",
+                    "1990-05-20", "Rua Um, 10", "01001-000"};
+            var header = sheet.createRow(0);
+            var row = sheet.createRow(1);
+            for (int index = 0; index < headers.length; index++) {
+                header.createCell(index).setCellValue(headers[index]);
+                row.createCell(index).setCellValue(values[index]);
+            }
+            try (var output = Files.newOutputStream(path)) { workbook.write(output); }
+        }
     }
 }

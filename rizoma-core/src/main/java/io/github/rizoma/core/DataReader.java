@@ -1,6 +1,7 @@
 package io.github.rizoma.core;
 
 import java.util.List;
+import java.util.Map;
 
 /** Format adapter capable of detecting and opening one tabular source. */
 public interface DataReader {
@@ -15,9 +16,18 @@ public interface DataReader {
     /** Detected structure and safe warnings. */
     record SourceStructure(String format, String charset, String delimiter,
                            boolean headerPresent, List<SourceColumn> columns,
-                           List<String> warnings) {
+                           List<String> warnings, Map<String, String> attributes) {
         public SourceStructure {
-            columns = List.copyOf(columns); warnings = List.copyOf(warnings);
+            columns = List.copyOf(columns);
+            warnings = List.copyOf(warnings);
+            attributes = Map.copyOf(attributes == null ? Map.of() : attributes);
+        }
+
+        /** Backward-compatible constructor for structures without format-specific attributes. */
+        public SourceStructure(String format, String charset, String delimiter,
+                               boolean headerPresent, List<SourceColumn> columns,
+                               List<String> warnings) {
+            this(format, charset, delimiter, headerPresent, columns, warnings, Map.of());
         }
     }
 

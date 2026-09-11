@@ -11,6 +11,7 @@ import io.github.rizoma.core.MappingEngine;
 import io.github.rizoma.core.PathTabularSource;
 import io.github.rizoma.core.SemanticDetector;
 import io.github.rizoma.csv.CsvDataReader;
+import io.github.rizoma.excel.ExcelDataReader;
 import io.github.rizoma.ptbr.PtBrDetectors;
 import io.github.rizoma.ptbr.PtBrHeaderRules;
 import java.io.IOException;
@@ -32,7 +33,7 @@ import picocli.CommandLine.Model.CommandSpec;
 
 /** Command-line adapter for Rizoma analysis reports. */
 @Command(name = "rizoma", mixinStandardHelpOptions = true, version = "rizoma 0.1.0-SNAPSHOT",
-        description = "Explainable CSV-to-schema analysis.",
+        description = "Explainable CSV/XLS/XLSX-to-schema analysis.",
         subcommands = {RizomaCli.Analyze.class, RizomaCli.Explain.class})
 public final class RizomaCli implements Runnable {
     /** Successful execution. */
@@ -65,6 +66,8 @@ public final class RizomaCli implements Runnable {
         command.setExecutionExceptionHandler((exception, commandArgs, parseResult) -> {
             commandArgs.getErr().println("Execution failed safely: " + safeMessage(exception));
             if (exception instanceof AmbiguousColumnException) return AMBIGUOUS_COLUMN;
+            if (exception instanceof EngineException engineException
+                    && engineException.code().equals("INVALID_READER_OPTION")) return INVALID_INPUT;
             if (exception instanceof IllegalArgumentException || exception instanceof JsonProcessingException) return INVALID_INPUT;
             return ANALYSIS_FAILURE;
         });
@@ -79,7 +82,7 @@ public final class RizomaCli implements Runnable {
         List<SemanticDetector> detectors = new ArrayList<>(CoreSemanticDetectors.defaults());
         detectors.addAll(PtBrDetectors.defaults());
         return MappingEngine.builder()
-                .readers(List.of(new CsvDataReader()))
+                .readers(List.of(new ExcelDataReader(), new CsvDataReader()))
                 .semanticDetectors(detectors)
                 .normalizer(PtBrHeaderRules.normalizer())
                 .configuration(EngineConfig.defaults())
@@ -95,25 +98,29 @@ public final class RizomaCli implements Runnable {
     }
 
     @Command(name = "analyze", mixinStandardHelpOptions = true,
-            description = "Analyze a CSV against a versioned target schema and write a JSON report.")
+            description = "Analyze a CSV, XLS or XLSX against a versioned target schema and write a JSON report.")
     static final class Analyze implements Callable<Integer> {
-        @Parameters(index = "0", description = "Input CSV path") Path source;
+        @Parameters(index = "0", description = "Input CSV, XLS or XLSX path") Path source;
         @Option(names = "--schema", required = true, description = "Target schema JSON path") Path schema;
         @Option(names = "--out", required = true, description = "Analysis report JSON path") Path report;
         @Option(names = "--delimiter", description = "One of comma, semicolon, tab or pipe") String delimiter;
-        @Option(names = "--charset", defaultValue = "UTF-8", description = "UTF-8, ISO-8859-1 or WINDOWS-1252") String charset;
+        @Option(names = "--charset", description = "CSV only: UTF-8, ISO-8859-1 or WINDOWS-1252") String charset;
         @Option(names = "--header", defaultValue = "detect", description = "detect, first or none") String header;
+        @Option(names = "--sheet", description = "Excel only: exact worksheet name or zero-based index") String sheet;
+        @Option(names = "--formula", description = "Excel only: cached, expression or reject") String formula;
 
         @Override public Integer call() throws Exception {
-            requireRegularFile(source, "CSV source");
+            requireRegularFile(source, "source");
             requireRegularFile(schema, "schema");
             if (sameFileOrPath(source, report) || sameFileOrPath(schema, report)) {
                 throw new IllegalArgumentException("--out must not overwrite the source or schema");
             }
             Map<String, String> options = new LinkedHashMap<>();
-            options.put("charset", charset);
             options.put("header", header);
+            if (charset != null) options.put("charset", charset);
             if (delimiter != null) options.put("delimiter", namedDelimiter(delimiter));
+            if (sheet != null) options.put("sheet", sheet);
+            if (formula != null) options.put("formula", formula);
             AnalysisResult result = engine().analyze(new AnalysisRequest(
                     new PathTabularSource(source), JsonSupport.readSchema(schema), new AnalysisOptions(options, 42L)));
             writeAtomically(report, result);
@@ -172,7 +179,9 @@ public final class RizomaCli implements Runnable {
         private static AnalysisResult readReport(Path report) throws IOException {
             try {
                 AnalysisResult result = JsonSupport.MAPPER.readValue(report.toFile(), AnalysisResult.class);
-                if (!"1.0".equals(result.formatVersion())) throw new IllegalArgumentException("unsupported report formatVersion");
+                if (!List.of("1.0", "1.1").contains(result.formatVersion())) {
+                    throw new IllegalArgumentException("unsupported report formatVersion");
+                }
                 return result;
             }
             catch (JsonProcessingException e) { throw new IllegalArgumentException("invalid analysis report JSON", e); }

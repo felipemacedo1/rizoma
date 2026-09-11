@@ -29,9 +29,21 @@ O roadmap detalhado e seus criterios de aceite ficam na
   `34589348866` foi criada, mas os jobs nao iniciaram devido ao bloqueio de
   cobranca da conta GitHub.
 
+## 0.1b: Excel e seguranca (implementacao local concluida)
+
+- [x] Adaptador XLSX streaming e XLS legado com limite proprio.
+- [x] Deteccao por assinatura, selecao de planilha e identidade reproduzivel.
+- [x] Datas, gaps, identificadores formatados e formulas sem avaliacao.
+- [x] Limites de ZIP, expansao, entradas, planilhas e XLS em memoria.
+- [x] Rejeicao de path traversal, macro e relacionamento externo.
+- [x] Paridade top-1 CSV/XLS/XLSX para os sete campos da fixture principal.
+- [x] API e CLI usam o mesmo pipeline para os tres formatos.
+- [x] `verify` local em Java 21 e Java 25, 42 testes sem falha.
+- [ ] Reexecutar GitHub Actions apos resolver o bloqueio de cobranca.
+- [ ] Publicar release/tag/artefatos somente mediante autorizacao explicita.
+
 ## Versoes seguintes
 
-- **0.1b:** XLS/XLSX e seguranca de arquivos; publica 0.1.
 - **0.2:** metricas restantes, profiling avancado, anomalias e corpus.
 - **0.3:** transformacao, validacao, dry run e sink seguro de referencia.
 - **0.4:** feedback e knowledge base.
