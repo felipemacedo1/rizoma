@@ -19,15 +19,16 @@ Atualizado em: 2026-09-11
 ## Estado de implementacao
 
 **IMPLEMENTADO, VERIFICADO LOCALMENTE E PERSISTIDO NO REMOTO:** incrementos
-0.1a e 0.1b. A API e a CLI leem CSV e XLSX em fluxo e XLS legado sob limite de
-memoria, detectam estrutura, selecionam worksheet, normalizam headers,
+0.1a e 0.1b, acrescidos do hardening da candidata 0.1. A API e a CLI leem CSV e
+XLSX em fluxo e XLS legado sob limite de memoria, detectam estrutura,
+selecionam worksheet, normalizam headers,
 constroem perfis e features limitadas, acumulam evidencia de
 CPF/e-mail/telefone/data, calculam Dice e Levenshtein normalizado, ranqueiam
 candidatos, abstêm em casos insuficientes/contraditorios, detectam colisao
 exclusiva e produzem relatorio JSON protegido e explicacao. Excel inclui datas
 ISO, gaps, formulas nunca avaliadas e preflight contra arquivos hostis. O
-commit `1887a14` e a candidata oficial a release 0.1; nenhuma tag ou release foi
-publicada.
+commit de hardening `823a0cd` e a base atual da candidata a release 0.1;
+nenhuma tag ou release foi publicada.
 
 **PLANEJADO / NAO IMPLEMENTADO:** detector completo de CNPJ e CEP, profiling
 avancado, anomalias por linha, transformacao, validacao de
@@ -58,12 +59,10 @@ paralelismo, ML, embeddings e LLM.
 
 ## Limites e riscos atuais
 
-- O commit `1887a14834269b091ada27a969adf704dc22839c` esta em `origin/main`.
-  HEAD local, tracking branch e ref remota foram comparados; o tree SHA local e
-  o retornado pela API do GitHub sao
-  `6442528d10dba0e14f35d087cd4cfff1cb911580`.
-- As execucoes do GitHub Actions, incluindo `34654764370` para o commit base do
-  0.1b, nao iniciaram nenhum step: os jobs Java 21 e 25 foram recusados porque a
+- O commit de hardening `823a0cd1f56351fddf7b6c69475424576996fa0a` foi
+  confirmado em `origin/main` por tracking branch e `git ls-remote`.
+- A execucao GitHub Actions `34656508570`, associada ao commit de hardening,
+  nao iniciou nenhum step: os jobs Java 21 e 25 foram recusados porque a
   conta GitHub continua bloqueada por um problema de cobranca. Portanto, a
   matriz e o quickstart continuam sem verificacao remota; isso nao representa
   falha observada no codigo ou no workflow.
