@@ -7,7 +7,7 @@ Atualizado em: 2026-09-10
 - Nome do projeto: Rizoma.
 - Linguagem: Java.
 - Objetivo: motor inteligente e automatizado de importacao de planilhas e CSV.
-- Repositorio privado `felipemacedo1/rizoma` criado e branch `main` publicada.
+- Repositorio publico `felipemacedo1/rizoma` criado e branch `main` publicada.
 - Workspace Codex autonomo configurado, com memoria nativa habilitada.
 
 ## Ainda nao decidido
