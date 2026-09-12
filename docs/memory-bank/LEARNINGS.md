@@ -68,3 +68,29 @@
 - Um arquivo append-only deve rejeitar a ultima linha sem terminador: apos uma
   queda, um JSON parcial que por acaso seja valido nao pode receber outro evento
   na mesma linha silenciosamente.
+- Plano de um arquivo conhecido nao e template: reutilizar a receita exige
+  calcular o fingerprint do novo conteudo e criar outro plano source-bound.
+- Layout fingerprint nao deve conter celulas; headers normalizados, ocorrencia,
+  posicao e guard limitado bastam para reconhecimento explicavel, mas sampling
+  nunca garante ausencia de data drift raro.
+- Coluna adicionada e renomeacao localizada nao justificam rematching global;
+  contabilizar pares/metrica executados torna o trabalho evitado verificavel.
+- Mapping de importacao e projection, nao assignment: ignored, constant,
+  derived N->1 e uso 1->N invalidam Hungarian como default arquitetural.
+- Uma linguagem derived pequena e fechada cobre composicao comum sem introduzir
+  scripting; operandos source/constant evitam DAG, ciclos e execucao arbitraria.
+- Fast path ainda precisa percorrer bytes para SHA-256. Ganho deve ser atribuido
+  a profiling/candidate scoring evitados, nao a ausencia de I/O completo.
+- Uma fachada de adocao deve delegar ao engine existente; duplicar matching ou
+  dry run na camada simples criaria dois comportamentos impossiveis de auditar.
+- Um `InputStream` one-shot nao satisfaz um pipeline que calcula fingerprint e
+  reabre a fonte. Materializacao limitada e explicita preserva o contrato sem
+  esconder disco temporario ou consumo ilimitado.
+- Um teste em modulo que depende apenas do agregador encontra friccoes que os
+  testes internos nao veem: defaults de delimitador, fingerprint de opcoes,
+  vazamento de adapters e erros tecnicos tornam-se observaveis como consumidor.
+- Parametro aceito e ignorado e falha de API: o teste black-box revelou que o
+  helper de plano nao encaminhava colunas explicitamente ignoradas.
+- Antes da primeira release, package e `groupId` devem ser auditados juntos.
+  Adiar a raiz controlada `io.github.felipemacedo1.rizoma` criaria uma quebra
+  publica posterior sem qualquer beneficio de compatibilidade hoje.

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.felipemacedo1</groupId>
+    <artifactId>rizoma-parent</artifactId>
+    <version>0.6.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>rizoma</artifactId>
+  <name>Rizoma Java API</name>
+  <description>Adoption facade with safe defaults for CSV, XLS and XLSX</description>
+  <dependencies>
+    <dependency><groupId>io.github.felipemacedo1</groupId><artifactId>rizoma-core</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>io.github.felipemacedo1</groupId><artifactId>rizoma-format-csv</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>io.github.felipemacedo1</groupId><artifactId>rizoma-format-excel</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>io.github.felipemacedo1</groupId><artifactId>rizoma-locale-ptbr</artifactId><version>${project.version}</version></dependency>
+  </dependencies>
+</project>

@@ -31,7 +31,7 @@ escrita e nao possui destino.
 Exemplo gerado pela CLI:
 
 ```bash
-java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.6.0-SNAPSHOT-all.jar \
   plan target/analysis.json --schema examples/dry-run-customer.schema.json \
   --map c0=customer.document --map c1=customer.email \
   --out target/mapping.json

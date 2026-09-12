@@ -1,6 +1,6 @@
 # Estado atual
 
-Atualizado em: 2026-09-11
+Atualizado em: 2026-09-12
 
 ## Confirmado
 
@@ -9,8 +9,13 @@ Atualizado em: 2026-09-11
 - Maven 3.9.16 esta fixado no Wrapper.
 - A arquitetura e um monolito modular de biblioteca: `rizoma-core`,
   `rizoma-format-csv`, `rizoma-format-excel`, `rizoma-locale-ptbr` e
-  `rizoma-cli` possuem codigo util e testes. O core depende apenas do JDK.
+  `rizoma-cli` possuem codigo util e testes. O agregador `rizoma` oferece a API
+  de adocao e `rizoma-adoption-tests` simula o consumidor externo. O core
+  depende apenas do JDK.
 - Apache-2.0 e a licenca vigente; `NOTICE` preserva a atribuicao do projeto.
+- O namespace Maven controlado e `io.github.felipemacedo1`; packages Java usam
+  exclusivamente `io.github.felipemacedo1.rizoma.*`. O antigo
+  `io.github.rizoma.*` foi removido antes da primeira release.
 - O schema de destino permanece no formato 1.0. O `AnalysisResult` atual produz
   JSON 1.3; a CLI `explain` aceita relatorios 1.0, 1.1, 1.2 e 1.3.
 
@@ -45,9 +50,30 @@ auditaveis. O scorer exibe history separado, `AnalysisResult` 1.3 e
 confirm/reject/correct` e `analyze --knowledge`. Esta atualizacao integra o
 commit de consolidacao administrativa do milestone.
 
+**IMPLEMENTADO E VERIFICADO LOCALMENTE, AINDA NAO CONSOLIDADO:** milestone 0.5
+Adaptive Layout & Data Projection. `LayoutSignature`/`LayoutTemplate` 1.0 e
+registries NoOp/InMemory permitem `FULL_ANALYSIS`, `FAST_REUSE` e
+`ADAPTIVE_REANALYSIS` com drift explicado. Todo reuse gera `MappingPlan` 1.2
+novo, ligado ao fingerprint do conteudo atual. Projection suporta source,
+constant, derived e unmapped; source ignorada permanece distinta de no-match.
+Dry run executa seis operacoes declarativas seguras antes de transformers e
+validators. CLI oferece `template create`, `recognize` e `explain-plan`.
+
+**IMPLEMENTADO E VERIFICADO LOCALMENTE, AINDA NAO CONSOLIDADO:**
+milestone 0.6 Public Java API & Adoption Layer. O artefato agregador `rizoma`
+compoe CSV/XLS/XLSX/core/pt-BR; `Rizoma.create()` fornece defaults seguros e
+`ProcessRequest`/`ProcessResult` distinguem review, dados invalidos e falha
+tecnica. Workflow e Extension APIs permanecem acessiveis, a CLI usa a mesma
+fachada e o modulo black-box depende diretamente apenas do agregador. A API e
+experimental antes de 1.0; reutilizacao sequencial e suportada, mas concorrencia
+depende das garantias das extensions injetadas.
+
 **PLANEJADO / NAO IMPLEMENTADO:** detector completo de CNPJ e detector
-semantico de CEP, unique/FK, qualquer destino/importacao, Hungarian,
+semantico de CEP, unique/FK, qualquer destino/importacao, registry persistente
+de layouts,
 plugins dinamicos, paralelismo, ML, embeddings e LLM. JMH continua adiado.
+Hungarian/matching global esta `DEFERRED / EVIDENCE-DRIVEN`, nao e a proxima
+etapa presumida.
 
 ## Evidencias locais do 0.2
 
@@ -115,6 +141,33 @@ plugins dinamicos, paralelismo, ML, embeddings e LLM. JMH continua adiado.
   estava NoOp, preservando o caminho anterior. RSS e memoria total; heap e a
   maior observacao antes de GC, nao pico exato.
 
+## Evidencias locais do 0.5
+
+- `./mvnw clean verify` passou no OpenJDK 21.0.12 e no JBR OpenJDK 25
+  (`25+36-b176.4`), sempre compilando com `--release 21`: 99 testes, zero
+  falhas ou skips.
+- JaCoCo do core: 2.368/2.501 linhas (94,68%) e 1.483/1.852 branches (80,08%);
+  gates 85%/80% atendidos sem exclusoes artificiais.
+- Quickstart executou analyze/explain, feedback, plan/dry-run, template,
+  reconhecimento `FAST_REUSE` e dry run do segundo arquivo. A rota fast avaliou
+  zero candidate pairs e zero similarity metrics; o novo plano recebeu o
+  fingerprint do segundo arquivo.
+- Corpus 0.2 com NoOp permaneceu em 22/23 top-1, 23/23 top-3, 7/7 abstencoes e
+  5/5 no-match; `Registro X -> supplier.code` continua preservado. Corpus 0.4
+  permaneceu top-1 3/4, top-3 3/4 -> 4/4, com um caso melhorado, um piorado e
+  dois inalterados.
+- Volume Java 21: 1.000.000 registros, 3 colunas, 50.000.034 bytes e
+  `-Xmx256m`. Na repeticao final, full analyze levou 50,21 s, RSS 174.460 KiB e
+  heap observado 59.516 KiB; fast reuse 1,06 s, 99.368 KiB e 20.793 KiB;
+  adaptive com um binding afetado 1,08 s, 100.284 KiB e 20.796 KiB; dry run
+  7,32 s, 200.880 KiB e 53.354 KiB. Fast/adaptive leram 64 registros, evitaram
+  profiling completo; fast executou 0 pares/metricas e adaptive 1 par. Sao
+  medicoes end-to-end, nao JMH nem gates de latencia. Para isolar ambiente, o
+  commit-base 0.4 foi extraido em temporario e executado no mesmo host/JDK:
+  analyze 50,17 s e dry run 6,96 s. Portanto nao houve regressao observavel do
+  analyze tradicional nesta comparacao controlada; os numeros historicos de
+  37,97 s foram obtidos em outra condicao de carga.
+
 ## Limites e riscos atuais
 
 - GitHub Actions permanece bloqueado por billing antes de iniciar jobs. E uma
@@ -132,7 +185,8 @@ plugins dinamicos, paralelismo, ML, embeddings e LLM. JMH continua adiado.
 - HLL `p=10` declara erro relativo esperado de 3,25%. Space-Saving e entropia
   aproximada sao marcados `ESTIMATED`; nenhuma aproximacao e publicada como
   exata.
-- MappingPlan 1.1 e DryRunResult 1.0 sao contratos experimentais. Dry run cobre
+- MappingPlan 1.2, LayoutTemplate/LayoutRecognitionResult 1.0 e DryRunResult
+  1.0 sao contratos experimentais. Dry run cobre
   apenas regras locais configuradas e nao equivale a importacao/prontidao para
   producao.
 - MappingPlan nao e assinado e e tratado como configuracao confiavel. Regexes
@@ -145,10 +199,39 @@ plugins dinamicos, paralelismo, ML, embeddings e LLM. JMH continua adiado.
   piorar ranking ambiguo.
 - O arquivo JSON Lines e local/cooperativo, limitado a 10 MiB/100.000 eventos/
   16 KiB por linha nos defaults. Nao e storage transacional distribuido.
-- A versao de desenvolvimento e `0.4.0-SNAPSHOT`. Nenhum artefato foi publicado.
+- Layout recognition usa guard default das primeiras 64 linhas; drift raro fora
+  da amostra pode nao ser observado. SHA-256 ainda le todos os bytes. Adaptive
+  cobre mudanca localizada, nao diff geral de multiplos bindings.
+- Layout registry persistente nao existe; NoOp e default e InMemory e limitado.
+  A CLI carrega um template JSON explicito por execucao.
+- A versao de desenvolvimento e `0.6.0-SNAPSHOT`. Nenhum artefato foi publicado.
+
+## Evidencias locais do 0.6
+
+- `./mvnw clean verify` passou no OpenJDK 21.0.12 e no JBR OpenJDK 25.0.4,
+  sempre com `--release 21`: 108 testes, zero falhas e zero skips.
+- JaCoCo do core: 2.397/2.530 linhas (94,74%) e 1.490/1.860 branches (80,11%);
+  gates 85%/80% atendidos sem exclusoes artificiais.
+- O teste black-box depende diretamente apenas do agregador e cobre CSV/XLSX,
+  review, plano confirmado, layout fast, extensoes, observer, fontes em memoria,
+  dados invalidos e falhas tecnicas. O quickstart completo passou.
+- A migracao para `io.github.felipemacedo1.rizoma.*` foi recompilada nas duas
+  JVMs; JavaDoc/doclint passou e os JARs contem zero entradas do package antigo.
+- Corpora preservados: 0.2 com 22/23 top-1, 23/23 top-3, 7/7 abstencoes e 5/5
+  no-match; 0.4 com top-1 3/4, top-3 3/4 -> 4/4, um caso melhorado e um piorado.
+- Smoke API com 100.000 linhas sob `-Xmx256m`: Workflow/Simple full
+  5,127/4,648 s, dry run 1,054/0,646 s e fast+dry 0,609/0,587 s. A ordem
+  favorece chamadas posteriores; nao e benchmark nem prova de superioridade.
+- Volume com 1.000.000 linhas sob `-Xmx256m`: analyze 51,50 s, fast 1,02 s,
+  adaptive 1,01 s e dry run 7,32 s; todas as contagens foram verificadas. A
+  repeticao 0.5 mediu 50,21/1,06/1,08/7,32 s, sem regressao relevante observada.
+- Repeticao posterior ao rename confirmou as mesmas contagens: 53,88/1,08/
+  1,09/7,65 s para analyze/fast/adaptive/dry run.
 
 ## Proximo passo
 
-O milestone 0.4 esta consolidado. Iniciar o milestone 0.5 somente mediante
-solicitacao especifica. A pendencia operacional do CI remoto permanece
+Revisar conjuntamente o diff ainda nao consolidado de 0.5/0.6. Commit e push
+somente quando solicitados; o remoto ainda esta no commit do 0.4 conforme
+verificacao de 2026-09-12. Nao iniciar REST, UI, import real, ROI ou matching
+global por inferencia. A pendencia operacional do CI remoto permanece
 registrada sem bloquear trabalho local.

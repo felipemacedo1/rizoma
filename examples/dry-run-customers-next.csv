@@ -1,0 +1,4 @@
+Documento;Email;Telefone;CEP;Nascimento;Valor;Ativo;Codigo
+123.456.789-09;synthetic.next@example.test;(21) 98888-1234;20040-020;2026-04-10;25,50;sim;00901
+111.444.777-35;synthetic.other@example.test;+55 (31) 97777-4321;30140-071;2026-05-11;100,00;não;00902
+000.000.000-00;invalid-email;telefone desconhecido;0100;31/02/2026;1,2,3;talvez;00903

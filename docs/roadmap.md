@@ -93,15 +93,64 @@ incrementos posteriores verificados localmente.
 - [x] Regressao dos contratos de relatorio 1.0/1.1/1.2 e plano 1.0.
 - [x] Consolidado administrativamente em commit/push quando solicitado.
 
+## 0.5: Adaptive Layout & Data Projection
+
+- [x] Fingerprints distintos para conteudo completo e estrutura protegida.
+- [x] `LayoutTemplate` 1.0 imutavel, criado explicitamente de analise/plano
+  compativeis, e registries NoOp/InMemory limitados e indexados.
+- [x] Classificacao `EXACT`, `COMPATIBLE`, `DRIFTED`, `UNKNOWN` e rotas
+  `FAST_REUSE`, `ADAPTIVE_REANALYSIS`, `FULL_ANALYSIS`.
+- [x] Guard limitado de tipo/semantica, drift estruturado e fallback
+  conservador diante de dependencia ausente, duplicidade ou contradicao.
+- [x] Novo `MappingPlan` 1.2 vinculado ao conteudo atual; plano antigo nunca e
+  reutilizado diretamente.
+- [x] Projection sources source-column, constant, derived e unmapped; source
+  columns ignoradas ficam separadas de no-match.
+- [x] Operacoes derivadas declarativas CONCAT/COALESCE e aritmetica BigDecimal,
+  incluindo erro tipado para divisao por zero.
+- [x] CLI `template create`, `recognize`, `explain-plan` e opcoes de projection
+  em `plan`; dry run usa o mesmo pipeline streaming.
+- [x] Testes de fast/adaptive/full, reorder, drift, projection e leitura de
+  MappingPlan 1.0/1.1.
+- [ ] Registry persistente de layouts, adiado ate existir requisito operacional.
+
+## 0.6: Public Java API & Adoption Layer
+
+- [x] Artefato agregador `rizoma` com CSV/XLS/XLSX/core/pt-BR.
+- [x] Fachada `Rizoma.create()` e builder avancado sem singleton global.
+- [x] `ProcessRequest`, `ProcessResult`, status/rotas de alto nivel e observer
+  opcional sem logging framework.
+- [x] Comportamento conservador: sem recipe confirmado retorna
+  `REVIEW_REQUIRED`; plano confirmado vai ao dry run; template usa as guardas
+  FULL/FAST/ADAPTIVE existentes.
+- [x] Builders ergonomicos de `TargetSchema`/`TargetField` e `Sources` para
+  Path, byte array e InputStream limitado.
+- [x] Hierarquia publica pequena para falhas tecnicas da Workflow API.
+- [x] CLI composta por `Rizoma.create()`, sem registry manual paralelo.
+- [x] Modulo externo nao publicavel com quatro exemplos de integracao, probe de
+  overhead e testes de CSV, XLSX, review, plano, template, extensoes e erros.
+- [x] Fronteiras Simple/Workflow/Extension/Internal e thread-safety documentadas.
+- [x] Packages alinhados ao namespace controlado
+  `io.github.felipemacedo1.rizoma.*` antes da primeira release.
+- [ ] Compatibilidade binaria publica, reservada para 1.0.
+- [ ] Publicacao do agregador, fora do escopo deste milestone.
+
 ## Versoes seguintes
 
 - **0.2:** implementado, verificado e persistido no remoto.
 - **0.3:** implementado, verificado e persistido no remoto.
 - **0.4:** feedback e knowledge base implementados, verificados e persistidos.
-- **0.5:** matching global bipartido opt-in.
-- **0.6:** SPI documentada e novas fontes orientadas por demanda.
+- **0.5:** Adaptive Layout & Data Projection implementado localmente; verificacao
+  e consolidacao administrativa registradas separadamente.
+- **0.6:** Public Java API & Adoption Layer implementado e verificado localmente;
+  consolidacao administrativa permanece separada.
 - **0.9:** API candidate, hardening e benchmarks publicados.
 - **1.0:** API estavel, release/SBOM e qualidade documentada.
+
+Matching global/Hungarian ficou **DEFERRED / EVIDENCE-DRIVEN**. Projection
+mapping suporta 1->0, 0->1, N->1 e 1->N, portanto assignment one-to-one nao e o
+modelo central. O tema so retorna quando corpus ou casos reais demonstrarem
+colisoes globais relevantes que nao sejam resolvidas por confirmacao/projecao.
 
 ## Hardening da candidata 0.1
 

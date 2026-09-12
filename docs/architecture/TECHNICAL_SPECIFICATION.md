@@ -93,7 +93,7 @@ mapeamento manual não escala.
 | RF-12 | Aplicar transformações e validações componíveis | 0.3 |
 | RF-13 | Executar dry run pelo caminho real, sem escrita | 0.3 |
 | RF-14 | Registrar feedback em knowledge base opcional | 0.4 |
-| RF-15 | Resolver colisões por matching global configurável | 0.5 |
+| RF-15 | Reconhecer layout confirmado e reutilizar bindings com guardas | 0.5 |
 | RF-16 | Emitir auditoria e observabilidade por portas | 0.2–0.3 |
 | RF-17 | Exportar relatórios estruturados, inicialmente JSON | 0.1 |
 
@@ -152,12 +152,19 @@ texto oficial está em `LICENSE` e a atribuição do projeto em `NOTICE`.
 
 Rizoma usa arquitetura hexagonal leve em um **monólito modular de biblioteca**.
 Fronteiras controlam dependências; não exigem framework ou uma classe por etapa.
+O `groupId` e `io.github.felipemacedo1` e a raiz exclusiva dos packages e
+`io.github.felipemacedo1.rizoma`, escolhida antes da primeira release para
+representar o namespace efetivamente controlado.
 
 ```mermaid
 flowchart LR
-    CLI[CLI] --> API[MappingEngine API]
-    APP[Aplicação futura] --> API
+    CLI[CLI] --> FACADE[rizoma / Public API]
+    APP[Aplicação Java] --> FACADE
+    FACADE --> API[Workflow API]
     API --> CORE[rizoma-core]
+    FACADE --> CSV
+    FACADE --> EXCEL
+    FACADE --> PTBR
     CORE --> SOURCE[Portas de origem]
     CORE --> KB[MappingKnowledgeBase]
     CORE -. futuro .-> SINK[MigrationSink]
@@ -183,22 +190,26 @@ future -------/      validate -> transform                  future sinks
 | `rizoma-format-csv` | Sniffing/dialeto e leitura record-wise | Apache Commons CSV/IO |
 | `rizoma-format-excel` | Leitura segura e streaming de XLS/XLSX | Apache POI |
 | `rizoma-locale-ptbr` | Aliases e detectores semânticos brasileiros; no 0.1a, CPF e telefone | Core, sem rede |
-| `rizoma-cli` | Comandos, configuração, schema/report JSON e composição | Picocli/Jackson/adaptadores |
+| `rizoma` | Fachada publica, defaults e artefato agregador de adocao | Core e adaptadores de formato/locale |
+| `rizoma-cli` | Comandos, schema/report JSON e operacao sobre a mesma fachada | `rizoma`, Picocli e Jackson |
+| `rizoma-adoption-tests` | Exemplos compilados e testes black-box de consumo externo | Somente o agregador `rizoma` como dependencia de producao |
 | `rizoma-benchmarks` | Microbenchmarks fora dos artefatos de produção | JMH, criado só com código mensurável |
 
-Não haverá inicialmente módulos `api`, `spi`, `domain`, `application` ou
-`observability`; são pacotes no core até dependência, ciclo ou estabilidade
-justificar extração. Diretórios vazios não serão criados.
+O 0.6 adiciona somente o agregador com implementacao e teste de adocao. Nao ha
+modulos vazios `spi`, `domain`, `application` ou `observability`; workflow e
+SPIs continuam no core ate estabilidade justificar extracao.
 
 ```text
-              +-------------- rizoma-cli --------------+
-              |                     |                   |
-              v                     v                   v
-    rizoma-format-csv   rizoma-format-excel   rizoma-locale-ptbr
-              \                     |                   /
-               +--------------------+------------------+
-                                    v
-                              rizoma-core
+java consumer --> rizoma <-- rizoma-cli
+                    |
+        +-----------+-----------+
+        |           |           |
+        v           v           v
+       CSV         Excel       pt-BR
+        \           |           /
+         +----------+----------+
+                    v
+                rizoma-core
 
 Core nunca depende de CLI, POI, Commons CSV, banco, Spring ou web.
 ```
@@ -666,17 +677,17 @@ bloqueia automação. Antes de calibração, `AUTO_MAP` fica desligado por padr�
 próprio core. Contradições fortes incluem semântica incompatível ou colisão em
 destino exclusivo; constraints de importação ainda não são executadas.
 
-## 16. Matching global
+## 16. Matching global (adiado, orientado por evidencia)
 
 One-to-one pode ser modelado como assignment bipartido ponderado. Hungarian
 resolve em `O(n^3)`, com nós fictícios para `UNMAPPED`. Só faz sentido quando
 exclusividade é verdadeira e os scores locais são confiáveis.
 
-Será adiado porque campos compostos e duplicações quebram one-to-one; maximizar
-a soma pode aceitar vários pares medíocres; poda pode remover o ótimo; e um
-otimizador não corrige score ruim. Na 0.5 coexistirão `LocalMappingStrategy` e
-`BipartiteMappingStrategy` opt-in, com constraints, mappings fixos,
-`UNMAPPED` e desempate determinístico.
+Foi adiado porque campos compostos, constantes, colunas ignoradas e reutilizacao
+de uma origem por mais de um destino quebram one-to-one; maximizar a soma pode
+aceitar pares mediocres, poda pode remover o otimo e um otimizador nao corrige
+score ruim. Hungarian so retorna com evidencia de colisoes globais reais e
+constraints explicitamente one-to-one.
 
 ## 17. Feedback e aprendizagem progressiva
 
@@ -750,6 +761,64 @@ regras, e a versao do motor. Alteracao relevante gera `INVALIDATE_PLAN` ou
 snapshot materializado do conteudo nem migracao; o snapshot de knowledge do 0.4
 e apenas uma identidade auditavel de evidencia historica.
 
+### 18.1 Adaptive layout e data projection (0.5)
+
+`LayoutSignature` identifica estrutura protegida: formato, worksheet/atributos
+do reader, headers normalizados, posicao/ocorrencia e tipo/semantica observados
+em guard limitado. Ela nao substitui o SHA-256 do conteudo. `LayoutTemplate`
+congela a signature, schema/config/knowledge auditavel, bindings confirmados,
+ignorados e steps; sua criacao e explicita. Para outro arquivo, o engine nunca
+reutiliza o plano antigo: produz um `MappingPlan` 1.2 novo com SHA-256 atual.
+
+```text
+source -> bounded structural guard -> registry lookup
+       -> EXACT/COMPATIBLE  -> FAST_REUSE -> new source-bound plan
+       -> localized drift   -> ADAPTIVE_REANALYSIS -> affected checks -> new plan
+       -> unsafe/unknown    -> FULL_ANALYSIS -> no reusable plan
+```
+
+Projection e orientada ao destino. Cada binding e `SOURCE_COLUMN`, `CONSTANT`,
+`DERIVED` ou `UNMAPPED`; colunas de origem explicitamente ignoradas sao
+registradas fora dos bindings e nao se confundem com no-match. Derived aceita
+somente source columns e constantes, com CONCAT, COALESCE, ADD, SUBTRACT,
+MULTIPLY e DIVIDE. Aritmetica usa `BigDecimal`; nao ha scripting, eval nem DAG
+entre targets. O dry run avalia projection antes dos transformers/validators.
+
+Fast path ainda valida formato, schema/config, versoes, colunas, duplicidade,
+tipo e contradicao semantica em amostra deterministica. Reordenacao com
+identidade unica e segura. Renomeacao unica compativel ou coluna adicional
+seguem rota adaptativa; remocao de dependencia, duplicidade inesperada e drift
+de tipo/semantica forcam analise completa. A amostra guard default de 64 linhas
+pode nao observar drift raro; isso e limitacao declarada, nao garantia total.
+
+### 18.2 Public Java API e adoption layer (0.6)
+
+`io.github.felipemacedo1.rizoma.api.Rizoma` e a fachada imutavel. `create()` compoe os readers
+CSV/XLS/XLSX, regras core/pt-BR e stores NoOp; o builder acrescenta extensions
+sem exigir que o consumidor reconstrua registries. `ProcessRequest` representa
+source/schema/opcoes e recipe opcional. `ProcessResult` separa `SUCCESS`,
+`SUCCESS_WITH_WARNINGS`, `REVIEW_REQUIRED`, `INVALID` e `FAILED` e referencia,
+sem copiar, resultados detalhados quando presentes.
+
+```text
+Simple API:     Rizoma.process -> status + summary + optional details
+Workflow API:   analyze -> plan -> recognize -> dryRun
+Extension API:  reader / detector / metric / transformer / validator / stores
+Internal:       accumulators / sketches / feature and scoring implementation
+```
+
+Sem recipe confirmado, `process()` termina em review e nunca promove score a
+autorizacao. Plano confirmado evita inferencia. Template/registry executa as
+guardas 0.5 e so segue FAST/ADAPTIVE quando seguro. A CLI obtem a mesma
+composicao por `Rizoma.create()`, mantendo uma unica implementacao do pipeline.
+
+`Path` permanece streaming e sem copia. Um `InputStream` isolado nao e
+reabrivel; `Sources.from(InputStream)` o materializa em memoria com limite
+explicito de 100 MiB por default e documenta que o caller fecha o stream. Nao ha
+temporario oculto nessa factory. A fachada e reutilizavel sequencialmente; uso
+concorrente geral depende das garantias de todas as extensions injetadas e nao
+e prometido no 0.6.
+
 ## 19. Performance, streaming e sampling
 
 Com `R` linhas, `C` colunas, `T` campos, amostra `K` e top-values `V`:
@@ -762,6 +831,8 @@ Com `R` linhas, `C` colunas, `T` campos, amostra `K` e top-values `V`:
 | Levenshtein por par | `O(m*n)` | `O(min(m,n))` |
 | token/n-gram | linear nas unidades | linear na string limitada |
 | lookup historico em snapshot | `O(1)` medio por candidato | `O(eventos + pares)` no snapshot |
+| reconhecimento de layout | `O(bytes + G*C + templates_indexados)` | `O(G*C + candidatos)` |
+| projection por linha | `O(bindings + operandos + steps)` | `O(colunas + bindings)` |
 | Hungarian futuro | `O(max(C,T)^3)` | `O(C*T)` |
 
 O primeiro incremento será sequencial. Paralelismo prematuro complica ordem,
@@ -966,8 +1037,8 @@ uma acao externa separada e exige autorizacao explicita.
 | 0.2 | Metricas restantes, perfis avancados, anomalias e corpus rotulado |
 | 0.3 | Transformação, validação, MappingPlan e dry run sem qualquer sink |
 | 0.4 | Feedback explicito, snapshots e knowledge base em memoria/arquivo |
-| 0.5 | Matching bipartido opt-in comparado ao ranking local |
-| 0.6 | SPI documentada, fontes sob demanda e adapters de observabilidade |
+| 0.5 | Adaptive Layout & Data Projection; matching global adiado |
+| 0.6 | Public Java API, artefato agregador, examples e adoption tests |
 | 0.9 | API candidate, hardening e benchmarks publicados |
 | 1.0 | API estável, release/SBOM, documentação e qualidade publicadas |
 

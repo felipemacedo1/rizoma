@@ -8,6 +8,20 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Milestone 0.6: artefato agregador `rizoma`, fachada `Rizoma`,
+  `ProcessRequest`/`ProcessResult`, status e rotas orientados ao consumidor.
+- Factories reabriveis para `Path`, `byte[]` e `InputStream` limitado, builders
+  ergonomicos de schema e hierarquia publica pequena de falhas tecnicas.
+- Modulo black-box de adocao que depende diretamente apenas do agregador e
+  compila exemplos simple, workflow, extension e layout conhecido.
+- Milestone 0.5: layout signature/template, registry NoOp/InMemory, classificacao
+  de drift e rotas full/fast/adaptive.
+- `MappingPlan` 1.2 com projection sources source-column, constant, derived e
+  unmapped, alem de source columns explicitamente ignoradas.
+- Operacoes derivadas deterministicas CONCAT, COALESCE, ADD, SUBTRACT, MULTIPLY
+  e DIVIDE com aritmetica `BigDecimal` e erros tipados.
+- CLI `template create`, `recognize` e `explain-plan`; `plan` aceita constants,
+  derived, ignored e unmapped target.
 - Milestone 0.4: feedback humano explicito `CONFIRMED`, `REJECTED` e
   `CORRECTED`, agregado como evidencia historica deterministica.
 - Knowledge bases NoOp e InMemory no core, mais adaptador JSON Lines limitado e
@@ -41,8 +55,21 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 - Contrato de resultado JSON 1.1 e leitura compativel de relatorios 1.0.
 - Teste de volume CSV com um milhao de registros sob `-Xmx256m`.
 
+### Changed
+
+- Packages Java padronizados de `io.github.rizoma.*` para
+  `io.github.felipemacedo1.rizoma.*`, alinhados ao namespace Maven controlado,
+  antes de qualquer release ou publicacao.
+
 ### Security
 
+- A Simple API mantem `AUTO_MAP` desligado, nunca confirma sugestoes, nao possui
+  sink e protege mensagens tecnicas contra detalhes de adapters ou celulas.
+- Fontes one-shot sao materializadas somente sob limite explicito e sem
+  temporario oculto; o caller continua responsavel por fechar seu stream.
+- Fast/adaptive path calcula SHA-256 do conteudo atual, usa guard limitado e
+  escala drift perigoso para analise completa; nunca reutiliza o plano antigo.
+- Layout fingerprint e relatorios de drift nao armazenam valores de celulas.
 - Eventos de feedback nao persistem celulas nem header original; contexto e
   metadados possuem limites explicitos.
 - Knowledge JSON Lines rejeita symlink, arquivo nao regular, truncamento,
@@ -71,6 +98,11 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Tests
 
+- Teste de consumidor externo cobre CSV/XLSX, review, plano confirmado,
+  `FAST_REUSE`, extensoes, observer, fontes em memoria e separacao entre dados
+  invalidos e falhas tecnicas.
+- Rotas exact/reorder/rename/add/remove/type/semantic/duplicate, projection,
+  divisao por zero, registry limitado e planos JSON 1.0/1.1 retrocompativeis.
 - Contratos de confirmacao/rejeicao/correcao, isolamento, determinismo,
   snapshots, duplicatas, limites e conflito com semantica atual forte.
 - Compatibilidade de `explain` com AnalysisResult 1.0/1.1/1.2 e leitura de
@@ -83,11 +115,14 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Known limitations
 
-- O desenvolvimento esta em `0.4.0-SNAPSHOT`; nenhuma tag ou release foi
+- O desenvolvimento esta em `0.6.0-SNAPSHOT`; nenhuma tag ou release foi
   publicada.
+- A API de adocao e experimental antes de 1.0 e nao promete compatibilidade
+  binaria; a composicao geral nao possui garantia de thread-safety concorrente.
 - Score e `confidenceIndex` sao heuristicas `UNCALIBRATED`, nao probabilidades.
 - XLS legado e a tabela de shared strings XLSX nao possuem memoria O(1).
-- Unique/foreign key, CNPJ, destino real e matching global nao estao
+- Unique/foreign key, CNPJ, destino real, registry persistente de layouts e
+  matching global nao estao
   implementados; dry run nao equivale a importacao nem prontidao de producao.
 - O GitHub Actions permanece bloqueado por billing antes de executar os jobs.
 - O corpus atual e pequeno, nao calibrado e mantem uma falha de documento

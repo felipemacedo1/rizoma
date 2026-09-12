@@ -6,7 +6,7 @@
 
   <groupId>io.github.felipemacedo1</groupId>
   <artifactId>rizoma-parent</artifactId>
-  <version>0.4.0-SNAPSHOT</version>
+  <version>0.6.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Rizoma</name>
@@ -18,7 +18,9 @@
     <module>rizoma-format-csv</module>
     <module>rizoma-format-excel</module>
     <module>rizoma-locale-ptbr</module>
+    <module>rizoma</module>
     <module>rizoma-cli</module>
+    <module>rizoma-adoption-tests</module>
   </modules>
 
   <properties>

@@ -15,6 +15,8 @@ estado vigente.
 
 - Baseline Java 21 com `--release 21`, sem preview, e CI tambem em Java 25.
 - Maven 3.9.x fixado pelo Maven Wrapper.
+- Namespace publico: `io.github.felipemacedo1.rizoma.*`, alinhado ao groupId
+  controlado `io.github.felipemacedo1`; nao reintroduzir `io.github.rizoma.*`.
 - Monolito modular de biblioteca, core somente JDK e adaptadores
   separados para CSV, Excel, locale pt-BR e CLI.
 - Pipeline deterministico, explicavel, sequencial e limitado em memoria.
@@ -38,11 +40,13 @@ estado vigente.
 
 ## Proxima tarefa executavel
 
-O milestone 0.4 de feedback historico esta implementado, verificado e
-consolidado. Nao iniciar o 0.5 sem tarefa especifica. O bloqueio de cobranca do
-GitHub Actions e uma pendencia operacional conhecida e nao impede
-desenvolvimento local verificado; nao gastar tempo com esse bloqueio ate nova
-orientacao.
+Os milestones 0.5 e 0.6 estao implementados e verificados localmente no
+worktree; o conjunto deve ser revisado/consolidado somente quando solicitado.
+O remoto ainda aponta para o 0.4 conforme verificacao de
+2026-09-12. Matching global/Hungarian esta adiado por decisao evidence-driven.
+O bloqueio de cobranca do GitHub Actions e uma pendencia operacional conhecida
+e nao impede desenvolvimento local verificado; nao gastar tempo com esse
+bloqueio ate nova orientacao.
 
 ## Criterio de conclusao
 

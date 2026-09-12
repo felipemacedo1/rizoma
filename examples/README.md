@@ -22,3 +22,12 @@ O corpus rotulado do milestone 0.2 segue a mesma politica e esta documentado em
 decimal e booleano, alem de identificadores com zeros iniciais. Todos os nomes,
 dominios e valores foram criados especificamente para o repositorio. Os CPFs
 com checksum valido nao estao associados a qualquer pessoa.
+
+`dry-run-customers-next.csv` mantem a mesma estrutura com conteudo sintetico
+novo para demonstrar reconhecimento `FAST_REUSE` e a criacao de um novo plano
+vinculado ao fingerprint do segundo arquivo.
+
+Exemplos Java compilados da camada de adocao ficam em
+`rizoma-adoption-tests/src/main/java/io/github/rizoma/examples`: processamento
+simples, workflow controlado, validator customizado e layout conhecido. O
+modulo depende diretamente apenas do artefato agregador `rizoma`.

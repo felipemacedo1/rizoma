@@ -187,3 +187,70 @@ versao do snapshot. O snapshot participa do `planId`; conhecimento posterior
 nao modifica plano. O adapter JSON Lines fica no CLI para manter Jackson fora
 do core, com limites, validacao estrita, append/lock e deteccao de truncamento.
 Ele e local/cooperativo, nao substitui um banco transacional multi-host.
+
+## 2026-09-12 - Adaptive Layout & Data Projection no 0.5
+
+Matching global/Hungarian foi retirado da prioridade 0.5 e ficou
+`DEFERRED / EVIDENCE-DRIVEN`. Importacao real admite source ignorada,
+constante, N->1 derived e reutilizacao 1->N; assignment one-to-one nao e o
+modelo central sem evidencia de colisoes globais relevantes.
+
+Fingerprint de conteudo e signature de layout sao identidades distintas. O
+primeiro continua vinculando cada `MappingPlan` aos bytes atuais. A segunda usa
+somente metadados estruturais protegidos e guard limitado. `LayoutTemplate` e
+receita operacional confirmada e imutavel; knowledge continua sendo evidencia
+historica. Template nunca e plano reutilizado: a instanciacao sempre cria
+`MappingPlan` 1.2 com fingerprint da fonte corrente.
+
+As rotas sao enums auditaveis, nao probabilidades: `FULL_ANALYSIS`,
+`FAST_REUSE` e `ADAPTIVE_REANALYSIS`. Fast aceita estrutura igual ou reorder
+inequivoco depois de checar schema/config/versoes/tipo/semantica. Adaptive cobre
+adicao irrelevante ou uma renomeacao localizada que passe guard lexical ou
+semantico. Dependencia removida, duplicidade nova, tipo ou semantica
+contraditorios escalam para full. O guard default observa 64 linhas e nao
+promete detectar drift raro.
+
+Projection pertence ao plano orientado ao target e possui somente
+`SOURCE_COLUMN`, `CONSTANT`, `DERIVED` e `UNMAPPED`; source ignorada fica em
+colecao separada de no-match. Derived referencia source columns/constantes e
+oferece seis operacoes fechadas com `BigDecimal`, sem scripting, eval ou DAG de
+targets. Registry persistente foi adiado; NoOp e o default, InMemory e limitado
+e indexado, e a CLI carrega template explicito por execucao.
+
+## 2026-09-12 - Public Java API & Adoption Layer no 0.6
+
+O caso comum passa a depender de um unico artefato agregador `rizoma`. A
+fachada experimental `Rizoma` compoe os adapters CSV/XLS/XLSX, regras core e
+pt-BR, limites seguros e stores NoOp. Ela nao duplica o pipeline: Simple API,
+Workflow API e Extension API sao camadas de entrada sobre o mesmo engine.
+
+`process()` nunca confirma uma sugestao. Sem plano ou template confirmado,
+retorna `REVIEW_REQUIRED`; com plano source-bound, valida e executa dry run;
+com template, usa as guardas FULL/FAST/ADAPTIVE do 0.5. Dados invalidos viram
+`INVALID`, enquanto falhas tecnicas usam `FAILED` ou uma hierarquia publica
+pequena na Workflow API.
+
+`Path` e a fonte preferida para volume. `byte[]` recebe copia defensiva e
+`InputStream` one-shot e materializado em memoria sob limite explicito porque
+fingerprint e pipeline exigem reabertura; nao ha temporario oculto. A API 0.x
+nao promete compatibilidade binaria nem concorrencia geral. A fachada e
+reutilizavel sequencialmente; uso concorrente depende de todas as extensions e
+stores fornecidos pelo integrador.
+
+## 2026-09-12 - Namespace publico controlado antes da primeira release
+
+O `groupId` permanece `io.github.felipemacedo1` e todos os packages Java passam
+a usar a raiz `io.github.felipemacedo1.rizoma`. O namespace anterior
+`io.github.rizoma` foi removido integralmente, sem aliases ou classes-ponte.
+
+A convencao Java recomenda uma raiz derivada de dominio/namespace controlado, e
+o Maven Central provisiona `io.github.<github-user>` como namespace verificavel
+para a conta correspondente. `io.github.rizoma` nao expressava um namespace
+controlado pelo projeto e divergia do `groupId`. Fontes oficiais consultadas:
+<https://docs.oracle.com/javase/specs/jls/se21/html/jls-6.html> e
+<https://central.sonatype.org/register/namespace/>.
+
+A mudanca e deliberadamente breaking, mas ocorre antes de tag, release,
+publicacao ou consumidor externo conhecido. Fazer a migracao agora evita uma
+quebra muito mais cara depois da adocao. ArtifactIds e contratos JSON nao
+mudam; nomes de classe serializados nunca fizeram parte dos contratos.
