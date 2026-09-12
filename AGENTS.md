@@ -40,10 +40,10 @@ estado vigente.
 
 ## Proxima tarefa executavel
 
-Os milestones 0.5 e 0.6 estao implementados e verificados localmente no
-worktree; o conjunto deve ser revisado/consolidado somente quando solicitado.
-O remoto ainda aponta para o 0.4 conforme verificacao de
-2026-09-12. Matching global/Hungarian esta adiado por decisao evidence-driven.
+Os milestones 0.5 e 0.6 estao implementados, verificados e persistidos em
+`origin/main` a partir do commit `4fba025`. Nao iniciar outro milestone sem
+tarefa especifica. Matching global/Hungarian esta adiado por decisao
+evidence-driven.
 O bloqueio de cobranca do GitHub Actions e uma pendencia operacional conhecida
 e nao impede desenvolvimento local verificado; nao gastar tempo com esse
 bloqueio ate nova orientacao.

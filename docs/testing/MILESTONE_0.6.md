@@ -1,6 +1,7 @@
 # Verificacao do milestone 0.6
 
-Status: **IMPLEMENTADO E VERIFICADO LOCALMENTE**, ainda nao consolidado em Git.
+Status: **IMPLEMENTADO, VERIFICADO E PERSISTIDO NO REMOTO** no commit
+`4fba025`.
 
 ## Namespace pre-release
 

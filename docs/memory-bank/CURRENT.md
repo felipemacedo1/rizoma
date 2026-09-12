@@ -50,7 +50,7 @@ auditaveis. O scorer exibe history separado, `AnalysisResult` 1.3 e
 confirm/reject/correct` e `analyze --knowledge`. Esta atualizacao integra o
 commit de consolidacao administrativa do milestone.
 
-**IMPLEMENTADO E VERIFICADO LOCALMENTE, AINDA NAO CONSOLIDADO:** milestone 0.5
+**IMPLEMENTADO, VERIFICADO E PERSISTIDO NO REMOTO:** milestone 0.5
 Adaptive Layout & Data Projection. `LayoutSignature`/`LayoutTemplate` 1.0 e
 registries NoOp/InMemory permitem `FULL_ANALYSIS`, `FAST_REUSE` e
 `ADAPTIVE_REANALYSIS` com drift explicado. Todo reuse gera `MappingPlan` 1.2
@@ -59,7 +59,7 @@ constant, derived e unmapped; source ignorada permanece distinta de no-match.
 Dry run executa seis operacoes declarativas seguras antes de transformers e
 validators. CLI oferece `template create`, `recognize` e `explain-plan`.
 
-**IMPLEMENTADO E VERIFICADO LOCALMENTE, AINDA NAO CONSOLIDADO:**
+**IMPLEMENTADO, VERIFICADO E PERSISTIDO NO REMOTO:**
 milestone 0.6 Public Java API & Adoption Layer. O artefato agregador `rizoma`
 compoe CSV/XLS/XLSX/core/pt-BR; `Rizoma.create()` fornece defaults seguros e
 `ProcessRequest`/`ProcessResult` distinguem review, dados invalidos e falha
@@ -230,8 +230,8 @@ etapa presumida.
 
 ## Proximo passo
 
-Revisar conjuntamente o diff ainda nao consolidado de 0.5/0.6. Commit e push
-somente quando solicitados; o remoto ainda esta no commit do 0.4 conforme
-verificacao de 2026-09-12. Nao iniciar REST, UI, import real, ROI ou matching
-global por inferencia. A pendencia operacional do CI remoto permanece
-registrada sem bloquear trabalho local.
+Os milestones 0.5 e 0.6 foram consolidados no commit `4fba025`, enviado para
+`origin/main` e confirmado por `git ls-remote` em 2026-09-12. Nao iniciar REST,
+UI, import real, ROI, matching global ou outro milestone por inferencia. A
+pendencia operacional do CI remoto permanece registrada sem bloquear trabalho
+local.

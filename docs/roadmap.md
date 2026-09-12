@@ -140,10 +140,10 @@ incrementos posteriores verificados localmente.
 - **0.2:** implementado, verificado e persistido no remoto.
 - **0.3:** implementado, verificado e persistido no remoto.
 - **0.4:** feedback e knowledge base implementados, verificados e persistidos.
-- **0.5:** Adaptive Layout & Data Projection implementado localmente; verificacao
-  e consolidacao administrativa registradas separadamente.
-- **0.6:** Public Java API & Adoption Layer implementado e verificado localmente;
-  consolidacao administrativa permanece separada.
+- **0.5:** Adaptive Layout & Data Projection implementado, verificado e
+  persistido no commit de consolidacao `4fba025`.
+- **0.6:** Public Java API & Adoption Layer implementado, verificado e
+  persistido no mesmo commit de consolidacao `4fba025`.
 - **0.9:** API candidate, hardening e benchmarks publicados.
 - **1.0:** API estavel, release/SBOM e qualidade documentada.
 
