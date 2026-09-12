@@ -2,7 +2,7 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-jar="$project_dir/rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar"
+jar="$project_dir/rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar"
 
 if [ ! -f "$jar" ]; then
   printf '%s\n' "CLI jar not found; run ./mvnw package first" >&2

@@ -3,7 +3,8 @@
 Rizoma e um motor Java de ingestao, profiling, mapeamento e preparacao segura de
 dados. A implementacao atual recebe CSV, XLS ou XLSX e um esquema conhecido,
 produz sugestoes explicaveis e executa transformacao/validacao em dry run, sem
-escrever em qualquer sistema de destino.
+escrever em qualquer sistema de destino. Feedback humano explicito pode ser
+reutilizado como evidencia historica deterministica e auditavel.
 
 ## O que funciona hoje
 
@@ -35,6 +36,13 @@ escrever em qualquer sistema de destino.
 - dry run streaming com policies, contagens reais e erros/warnings limitados e
   mascarados;
 - CLI `plan` e `dry-run`, reutilizando a mesma API Java sem porta de destino.
+- feedback `CONFIRMED`, `REJECTED` e `CORRECTED`, sempre registrado por uma
+  operacao explicita;
+- knowledge bases `NoOp` (default), em memoria e JSON Lines limitado no
+  adaptador CLI;
+- historico isolado por schema/fingerprint, campo destino, nome normalizado,
+  locale e contexto, com snapshot registrado no resultado e no plano;
+- componente `history` separado e explicavel, com peso default limitado a 0,10.
 
 O score e um indicador heuristico, nao uma probabilidade. A calibracao e
 `UNCALIBRATED` e `AUTO_MAP` vem desligado por padrao no proprio core. Uma
@@ -57,12 +65,12 @@ de branches.
 
 ```bash
 ./mvnw package
-java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
   analyze examples/clientes.csv \
   --schema examples/customer.schema.json \
   --out target/report.json
 
-java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
   explain target/report.json --column "CPF Cliente"
 ```
 
@@ -72,12 +80,12 @@ O plano exige confirmacao explicita por ID posicional; ele nunca converte uma
 sugestao em autorizacao automaticamente:
 
 ```bash
-java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
   analyze examples/dry-run-customers.csv \
   --schema examples/dry-run-customer.schema.json \
   --out target/dry-analysis.json --delimiter semicolon --header first
 
-java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
   plan target/dry-analysis.json \
   --schema examples/dry-run-customer.schema.json \
   --out target/mapping.json \
@@ -86,7 +94,7 @@ java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
   --map c4=customer.birthDate --map c5=customer.amount \
   --map c6=customer.active --map c7=customer.code
 
-java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
   dry-run examples/dry-run-customers.csv \
   --schema examples/dry-run-customer.schema.json \
   --mapping target/mapping.json --out target/dry-run.json \
@@ -98,6 +106,31 @@ escolhas confirmadas e os steps derivados. `dry-run` reabre a mesma fonte,
 verifica fingerprints, transforma e valida; nao recebe sink e nao importa nada.
 Policies disponiveis: `COLLECT_ERRORS` (default), `SKIP_ROW` e `FAIL_FAST`, com
 `--max-errors`, `--max-issue-samples` e `--max-issue-codes`.
+
+## Feedback historico explicito
+
+`analyze` nunca grava feedback. A persistencia acontece somente nos comandos
+abaixo, a partir de um relatorio e schema compativeis:
+
+```bash
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
+  feedback confirm target/report.json \
+  --schema examples/customer.schema.json --knowledge target/knowledge.jsonl \
+  --column-id c1 --target customer.document
+
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
+  analyze examples/clientes.csv --schema examples/customer.schema.json \
+  --knowledge target/knowledge.jsonl --out target/report-with-history.json
+
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
+  explain target/report-with-history.json --column-id c1
+```
+
+Tambem existem `feedback reject --target ...` e
+`feedback correct --suggested-target ... --correct-target ...`. O arquivo guarda eventos JSON
+Lines versionados, não células. Uma correção conta como evidência negativa para
+o sugerido e positiva para o escolhido. O lookup é exato após normalização e
+isolado pelo contexto do schema; não há busca fuzzy, decay temporal ou ML.
 
 Para headers duplicados, `--column` retorna erro em vez de escolher a primeira
 ocorrencia. Use, por exemplo, `--column-id c1`. `analyze` reserva stdout para
@@ -147,13 +180,24 @@ MappingPlan plan = new MappingPlanner().create(result, schema, List.of(
 DryRunResult dryRun = engine.dryRun(new DryRunRequest(
     source, schema, plan, options, DryRunOptions.defaults()));
 System.out.println(dryRun.rowsValid() + " valid rows");
+
+InMemoryMappingKnowledgeBase knowledge = new InMemoryMappingKnowledgeBase();
+knowledge.record(MappingFeedback.confirmed(
+    "review-001", "2026-01-01T00:00:00Z", result, schema,
+    "c1", "customer.document", PtBrHeaderRules.normalizer(), "human-review"));
+AnalysisResult withHistory = engine.analyze(
+    new AnalysisRequest(source, schema, options, knowledge));
+System.out.println(withHistory.knowledgeSnapshotId());
 ```
 
 Fonte, esquema e opcoes pertencem a `AnalysisRequest`; o engine nao guarda
 estado de uma execucao. A composicao e imutavel e suporta reutilizacao
 sequencial. Uso concorrente nao e prometido porque componentes injetados podem
 possuir restricoes proprias. `dryRun` nao aceita destino; escrita real nao foi
-implementada.
+implementada. A knowledge base pertence a cada `AnalysisRequest`; o engine nao
+mantem historico global oculto. Um `MappingPlan` conserva o ID/versao do
+snapshot da analise e nao muda quando novos eventos sao gravados. Dry run nao
+consulta nem grava knowledge.
 
 ## Como ler o resultado
 
@@ -166,13 +210,17 @@ implementada.
 - `blockers`: razoes que impedem automacao, como margem baixa, colisao ou
   `AUTO_MAP` desligado;
 - componentes indisponiveis: valor `null`, contribuicao zero e motivo explicito.
+- `history`: suporte historico deterministico; confirmacoes elevam e rejeicoes
+  suprimem o par conforme a confiabilidade limitada, sem significado
+  probabilistico.
 
 O formato do esquema e do relatorio de analise esta em
 [docs/contracts/JSON_CONTRACTS_0.2.md](docs/contracts/JSON_CONTRACTS_0.2.md); os
-contratos experimentais de plano/dry run estao em
-[docs/contracts/JSON_CONTRACTS_0.3.md](docs/contracts/JSON_CONTRACTS_0.3.md).
-Relatorios 1.2 sao produzidos atualmente; o comando `explain` continua lendo
-relatorios 1.0 e 1.1 para compatibilidade.
+contratos de feedback/knowledge do 0.4 estao em
+[docs/contracts/JSON_CONTRACTS_0.4.md](docs/contracts/JSON_CONTRACTS_0.4.md).
+Relatorios 1.3 e planos 1.1 sao produzidos atualmente; `explain` continua lendo
+relatorios 1.0, 1.1 e 1.2 e a desserializacao aceita planos 1.0 sem metadados de
+knowledge.
 
 ## Qualidade medida
 
@@ -187,6 +235,14 @@ detector CNPJ no 0.2. Consulte a
 [metodologia e ablation](docs/testing/CORPUS_0.2.md). Esses numeros descrevem um
 corpus pequeno criado junto com o incremento; nao representam calibracao nem
 generalizacao para dados externos.
+
+O corpus separado de feedback mede quatro casos de avaliacao mantidos fora das
+fixtures usadas para criar eventos. No resultado atual, history melhorou um
+ranking, piorou um empate lexical deliberadamente enganoso, deixou dois
+inalterados, suprimiu o candidato rejeitado e registrou um conflito em que CPF
+forte venceu historico incorreto. Top-1 permaneceu 3/4; top-3 passou de 3/4 para
+4/4. Esses numeros demonstram comportamento e risco, não ganho global nem
+calibracao.
 
 ```bash
 ./mvnw -pl rizoma-cli -am -Dtest=CorpusEvaluationTest \
@@ -238,10 +294,18 @@ original nem transformado. Datas com barra sem locale/formato confiavel e
 decimais com separadores sem locale falham como ambiguos; identificadores TEXT
 com zeros iniciais nao sao convertidos.
 
+O arquivo de knowledge usa no maximo 10 MiB, 100.000 eventos e 16 KiB por linha
+nos defaults da CLI. Leitura valida todo o arquivo sob lock, rejeita linha final
+truncada, JSON desconhecido/corrompido, duplicata conflitante, symlink e arquivo
+nao regular. Novos arquivos recebem permissao `0600` em sistemas POSIX. O path
+e fornecido explicitamente pelo operador; eventos nao controlam paths. O
+adaptador e indicado para uso local com um writer cooperativo, nao para
+concorrencia distribuida ou filesystem de rede.
+
 ## Limitacoes atuais
 
 CNPJ completo, detector semantico de CEP, quantis/outliers robustos, unique,
-foreign key, escrita em destino, feedback persistente, matching global, plugins
+foreign key, escrita em destino, matching global, plugins
 dinamicos, ML e LLM nao estao implementados. Dry run valida somente regras
 locais configuradas; nao declara dados prontos para producao. Linhas CSV
 irregulares continuam sendo erro estrutural fail-fast seguro, nao resultado
@@ -253,13 +317,15 @@ do POI ainda ocupa memoria e fica protegida indiretamente pelo limite expandido
 por entrada. Celulas mescladas nao sao propagadas: somente a ancora possui valor.
 O XLS legado nao e streaming. Valores `cached` de formula podem estar obsoletos,
 pois o Rizoma deliberadamente nao recalcula workbooks. Os artefatos estao em
-`0.3.0-SNAPSHOT` e ainda nao foram publicados em registry ou release. JMH foi
+`0.4.0-SNAPSHOT` e ainda nao foram publicados em registry ou release. JMH foi
 adiado ate o subscore lexical estabilizar; o custo atual e acompanhado pelo
 teste end-to-end de volume.
 
-Planos e regexes customizadas sao configuracao confiavel no 0.3. `planId` nao e
+Planos e regexes customizadas sao configuracao confiavel. `planId` nao e
 assinatura digital, e uma regex Java patologica nao possui timeout isolado
-dentro de uma linha.
+dentro de uma linha. O historico faz lookup somente por nome normalizado exato;
+nao ha recencia/decay, namespace de organizacao dedicado, compactacao,
+recuperacao automatica de arquivo parcial ou coordenacao multi-host.
 
 ## Fixtures e dados
 
@@ -280,6 +346,8 @@ amostras publicas sao mascaradas mesmo quando o tipo semantico e desconhecido.
 - [Especificacao tecnica](docs/architecture/TECHNICAL_SPECIFICATION.md)
 - [Contrato JSON 0.2](docs/contracts/JSON_CONTRACTS_0.2.md)
 - [Contratos de plano e dry run 0.3](docs/contracts/JSON_CONTRACTS_0.3.md)
+- [Contratos de feedback e knowledge 0.4](docs/contracts/JSON_CONTRACTS_0.4.md)
+- [Avaliacao de feedback 0.4](docs/testing/MILESTONE_0.4.md)
 - [Corpus e metricas 0.2](docs/testing/CORPUS_0.2.md)
 - [Roadmap](docs/roadmap.md)
 - [Estado atual](docs/memory-bank/CURRENT.md)

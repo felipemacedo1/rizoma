@@ -162,3 +162,28 @@ tipado; excecao indica configuracao ou execucao invalida. Datas e decimais
 exigem contexto suficiente, e identificadores TEXT nunca sofrem conversao
 numerica implicita. Unique/FK e CNPJ permanecem ausentes ate existir contrato
 correto e custo controlado.
+
+## 2026-09-11 - Feedback historico deterministico no 0.4
+
+Feedback e evento explicito e imutavel, nunca efeito colateral de `analyze` ou
+`dryRun`. `CONFIRMED` adiciona evidencia positiva, `REJECTED` negativa e
+`CORRECTED` negativa para o sugerido mais positiva para o escolhido. Celulas e
+headers originais nao entram no evento; somente identidade normalizada e
+metadados estruturais seguros sao persistidos.
+
+O default e `NoOpMappingKnowledgeBase`, preservando resultados anteriores. A
+knowledge pertence ao `AnalysisRequest`; o engine captura um snapshot imutavel
+uma vez e faz lookup indexado por schema/versao/fingerprint, target, nome
+normalizado, locale e contexto. Nao existe estado historico global oculto.
+
+O suporte usa `(P-N)/(P+N+2)`, saturacao logaritmica em oito eventos e
+confiabilidade limitada. A direcao historica e score 0/0,5/1, separada da
+confiabilidade, sem semantica probabilistica. Peso default 0,10 e contradicao
+semantica forte pode tornar o candidato inelegivel. Decay temporal foi adiado;
+timestamps servem somente para auditoria nesta fase.
+
+`AnalysisResult` evolui para 1.3 e `MappingPlan` para 1.1, ambos registrando ID e
+versao do snapshot. O snapshot participa do `planId`; conhecimento posterior
+nao modifica plano. O adapter JSON Lines fica no CLI para manter Jackson fora
+do core, com limites, validacao estrita, append/lock e deteccao de truncamento.
+Ele e local/cooperativo, nao substitui um banco transacional multi-host.

@@ -1,0 +1,8 @@
+{
+  "formatVersion":"1.0","schemaId":"feedback-contact","schemaVersion":"1",
+  "context":"customer-contact","locale":"pt-BR",
+  "fields":[
+    {"id":"customer.email","displayName":"Email","aliases":[],"physicalType":"TEXT","semanticTypes":["core:email"],"required":false},
+    {"id":"customer.phone","displayName":"Telefone","aliases":["Contato"],"physicalType":"TEXT","semanticTypes":["br:phone"],"required":false}
+  ]
+}

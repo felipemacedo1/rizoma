@@ -160,8 +160,8 @@ flowchart LR
     API --> CORE[rizoma-core]
     CORE --> SOURCE[Portas de origem]
     CORE --> KB[MappingKnowledgeBase]
-    CORE --> SINK[MigrationSink]
-    CORE --> OBS[AuditSink / EngineObserver]
+    CORE -. futuro .-> SINK[MigrationSink]
+    CORE -. futuro .-> OBS[AuditSink / EngineObserver]
     CSV[Adaptador CSV] --> SOURCE
     EXCEL[Adaptador XLS/XLSX] --> SOURCE
     FUTURE[JSON / XML / SQL futuros] -.-> SOURCE
@@ -239,6 +239,10 @@ classDiagram
 - `MappingCandidate`: par origem/destino com score e explicação.
 - `MappingDecision`: candidato escolhido ou `UNMAPPED`, status e motivos.
 - `AnalysisResult`: perfis, rankings, decisões e avisos; não retém o dataset.
+- `MappingFeedback`: evento humano imutavel `CONFIRMED`, `REJECTED` ou
+  `CORRECTED`, sem celulas ou header original.
+- `KnowledgeSnapshot`: indice imutavel e identificado capturado uma vez por
+  analise; produz `HistoricalEvidence` para uma chave de contexto exata.
 
 Cada medida declara `Accuracy = EXACT | ESTIMATED | SAMPLED | UNAVAILABLE`,
 método e tamanho da amostra. Mediana ou cardinalidade estimada nunca é
@@ -291,7 +295,7 @@ public interface Validator<T> {
 }
 
 public interface MappingKnowledgeBase {
-    HistoricalEvidence find(KnowledgeQuery query);
+    KnowledgeSnapshot snapshot();
     void record(MappingFeedback feedback);
 }
 ```
@@ -322,10 +326,13 @@ não é prometida porque readers e detectores injetados podem não ser thread-sa
 ```text
 rizoma analyze clientes.csv --schema customer.schema.json --out report.json
 rizoma explain report.json --column "CPF Cliente"
+rizoma feedback confirm report.json --schema schema.json --knowledge knowledge.jsonl \
+  --column-id c0 --target customer.code
 ```
 
-`map`, `import` e `dry-run` não são anunciados pela CLI no 0.1a. Seleção de
-header duplicado requer `--column-id cN`.
+O 0.3 acrescentou `plan` e `dry-run`; o 0.4 acrescentou `feedback confirm`,
+`reject`, `correct` e `analyze --knowledge`. Selecao de header duplicado requer
+`--column-id cN`. `import` continua indisponivel.
 
 `import` só será exposto quando ao menos um destino tiver semântica de falha,
 transação e idempotência documentadas.
@@ -640,8 +647,9 @@ No 0.2, o componente lexical continua sendo uma unica evidencia. Internamente,
 `lexical=0,40*tokenScore+0,35*editScore+0,25*gramScore`. Todas as metricas usam
 a mesma representacao destino; maximos de aliases diferentes nao sao
 misturados. O modo `BASELINE_0_1` preserva Dice/Levenshtein para ablation.
-Distribuicao de destino e historico permanecem indisponiveis, com contribuicao
-zero e motivo explicito.
+Distribuicao de destino permanece indisponivel. No 0.4, historico e um
+componente separado com peso default 0,10; sem par compativel permanece
+indisponivel, com contribuicao zero e motivo explicito.
 
 ### 15.2 Política de confiança
 
@@ -679,10 +687,34 @@ schemaId + schemaVersion/fingerprint + targetFieldId
 + normalizedSourceName + locale + optional domain/context
 ```
 
-Evidências guardam confirmações, rejeições, versão/recência e proveniência. Não
-misturam organizações por padrão. Histórico tem peso limitado e nunca substitui
-conteúdo atual. Implementações previstas: no-op e memória para testes; arquivo
-depois; JDBC/serviço somente sob demanda. O core funciona sem persistência.
+Evidências guardam confirmações, rejeições, correções, timestamps e
+proveniência. A implementação 0.4 exige também fingerprint integral do schema e
+isola schema, versão, locale e domínio por igualdade exata. Organizações devem
+usar bases separadas; um namespace organizacional dedicado permanece futuro.
+
+Com `P=confirmed+correctedTo`, `N=rejected+correctedFrom` e `T=P+N`:
+
+```text
+signedSupport = (P-N)/(T+2)
+support = min(1, ln(1+T)/ln(9))
+reliability = support*abs(signedSupport)
+historicalScore = 1, 0 ou 0,5 conforme o sinal de signedSupport
+```
+
+`historicalScore` expressa direcao, nao probabilidade; `reliability` limita a
+magnitude e o peso default de history e 0,10. Contradicao semantica forte torna
+o alvo inelegivel independentemente do historico. Recencia e retida para
+auditoria, mas decay nao foi implementado para nao depender silenciosamente do
+relogio.
+
+`NoOpMappingKnowledgeBase` e o default retrocompativel. A implementacao em
+memoria mantem eventos limitados e produz snapshot indexado. O adaptador JSON
+Lines da CLI e estrito, limitado, append-only e protegido por lock cooperativo;
+nao e um banco distribuido. Analyze captura um unico snapshot e nunca grava.
+`AnalysisResult` 1.3 registra snapshot/evidencias e `MappingPlan` 1.1 congela a
+identidade do snapshot no `planId`. Novo historico exige nova analise; dry run
+nao consulta knowledge nem aprende. Detalhes estao em
+`docs/contracts/MAPPING_FEEDBACK_0.4.md`.
 
 ## 18. Transformação, validação, dry run e migração
 
@@ -715,7 +747,8 @@ em milestone posterior; nenhuma dessas capacidades e anunciada pelo 0.3.
 versao/fingerprint do schema, ao fingerprint da configuracao e registro de
 regras, e a versao do motor. Alteracao relevante gera `INVALIDATE_PLAN` ou
 `REQUIRE_REANALYSIS`; campo required sem mapping gera `INCOMPLETE_PLAN`. Nao ha
-snapshot nem migracao.
+snapshot materializado do conteudo nem migracao; o snapshot de knowledge do 0.4
+e apenas uma identidade auditavel de evidencia historica.
 
 ## 19. Performance, streaming e sampling
 
@@ -728,6 +761,7 @@ Com `R` linhas, `C` colunas, `T` campos, amostra `K` e top-values `V`:
 | candidatos | `O(C*T*M)` | `O(C*topK)` após ranking |
 | Levenshtein por par | `O(m*n)` | `O(min(m,n))` |
 | token/n-gram | linear nas unidades | linear na string limitada |
+| lookup historico em snapshot | `O(1)` medio por candidato | `O(eventos + pares)` no snapshot |
 | Hungarian futuro | `O(max(C,T)^3)` | `O(C*T)` |
 
 O primeiro incremento será sequencial. Paralelismo prematuro complica ordem,
@@ -931,7 +965,7 @@ uma acao externa separada e exige autorizacao explicita.
 | 0.1b | XLS/XLSX, segurança e paridade; prepara candidata a release 0.1 |
 | 0.2 | Metricas restantes, perfis avancados, anomalias e corpus rotulado |
 | 0.3 | Transformação, validação, MappingPlan e dry run sem qualquer sink |
-| 0.4 | Feedback e knowledge base em memória/arquivo |
+| 0.4 | Feedback explicito, snapshots e knowledge base em memoria/arquivo |
 | 0.5 | Matching bipartido opt-in comparado ao ranking local |
 | 0.6 | SPI documentada, fontes sob demanda e adapters de observabilidade |
 | 0.9 | API candidate, hardening e benchmarks publicados |

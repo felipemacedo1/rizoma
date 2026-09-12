@@ -97,6 +97,19 @@ class MappingEngineTest {
         assertThrows(IllegalArgumentException.class, () -> MappingEngine.builder().readers(List.of(
                         new MemoryReader(List.of("A"), List.of(), new AtomicBoolean())))
                 .semanticDetectors(List.of(CoreSemanticDetectors.email(), CoreSemanticDetectors.email())).build());
+
+        MappingKnowledgeBase invalidKnowledge = new MappingKnowledgeBase() {
+            @Override public KnowledgeSnapshot snapshot() { return new KnowledgeSnapshot() {
+                public String id() { return ""; }
+                public String version() { return "1.0"; }
+                public long eventCount() { return 0; }
+                public HistoricalEvidence find(KnowledgeQuery query) { throw new AssertionError(); }
+            }; }
+            @Override public void record(MappingFeedback feedback) { throw new AssertionError(); }
+        };
+        assertEquals("INVALID_KNOWLEDGE_SNAPSHOT", assertThrows(EngineException.class,
+                () -> engine.analyze(new AnalysisRequest(new MemorySource(), schema, null,
+                        invalidKnowledge))).code());
     }
 
     @Test void recordStructureFieldTimeAndCancellationLimitsAreEnforcedAndResourcesClose() {
@@ -560,6 +573,99 @@ class MappingEngineTest {
         assertEquals(0, result.rowsInvalid());
         assertEquals(1, result.totalWarningCount());
         assertEquals(1, result.manualReviewRequiredCount());
+    }
+
+    @Test void requestScopedHistoryExplainsInfluenceAndStrongCurrentEvidenceWins() {
+        var normalizer = new HeaderNormalizer(Map.of(
+                "cod", List.of("codigo"), "cli", List.of("cliente")));
+        var schema = new TargetSchema("customer", "1", "customer", "pt-BR", List.of(
+                new TargetField("customer.code", "Customer identifier", List.of(),
+                        PhysicalType.TEXT, Set.of(), false),
+                new TargetField("customer.document", "CPF", List.of("Documento"),
+                        PhysicalType.TEXT, Set.of(new SemanticType("br:cpf")), false)));
+        var knowledge = new InMemoryMappingKnowledgeBase();
+        var firstEngine = MappingEngine.builder().readers(List.of(new MemoryReader(
+                        List.of("Cod Cli"), List.of(List.of("A-001")), new AtomicBoolean())))
+                .normalizer(normalizer).build();
+        AnalysisResult first = firstEngine.analyze(new AnalysisRequest(new MemorySource(), schema, null));
+        MappingFeedback confirmation = MappingFeedback.confirmed("confirm-code", "2026-01-01T00:00:00Z",
+                first, schema, "c0", "customer.code", normalizer, "synthetic-test");
+        knowledge.record(confirmation);
+
+        var futureReader = new MemoryReader(List.of("Cod. Cliente"), List.of(List.of("A-002")), new AtomicBoolean());
+        var futureEngine = MappingEngine.builder().readers(List.of(futureReader)).normalizer(normalizer).build();
+        AnalysisResult without = futureEngine.analyze(new AnalysisRequest(new MemorySource(), schema, null));
+        AnalysisResult with = futureEngine.analyze(new AnalysisRequest(
+                new MemorySource(), schema, null, knowledge));
+        var withoutCode = without.candidatesByColumn().get("c0").stream()
+                .filter(item -> item.targetFieldId().equals("customer.code")).findFirst().orElseThrow();
+        var withCode = with.candidatesByColumn().get("c0").stream()
+                .filter(item -> item.targetFieldId().equals("customer.code")).findFirst().orElseThrow();
+        var history = withCode.components().stream().filter(item -> item.id().equals("history")).findFirst().orElseThrow();
+        assertTrue(history.available());
+        assertTrue(history.contribution() > 0);
+        assertEquals(1, with.historicalEvidenceByColumn().get("c0").getFirst().confirmedCount());
+        assertNotEquals(NoOpMappingKnowledgeBase.SNAPSHOT_ID, with.knowledgeSnapshotId());
+        assertTrue(withCode.score() >= withoutCode.score());
+
+        var conflictingKnowledge = new InMemoryMappingKnowledgeBase();
+        for (int index = 0; index < 20; index++) {
+            conflictingKnowledge.record(MappingFeedback.confirmed("wrong-" + index,
+                    "2026-01-01T00:00:" + String.format("%02d", index) + "Z",
+                    first, schema, "c0", "customer.code", normalizer, "synthetic-test"));
+        }
+        var cpfReader = new MemoryReader(List.of("Cod Cli"), List.of(
+                List.of("529.982.247-25"), List.of("111.444.777-35")), new AtomicBoolean());
+        SemanticType cpfType = new SemanticType("br:cpf");
+        MappingEngine cpfEngine = MappingEngine.builder().readers(List.of(cpfReader))
+                .semanticDetectors(List.of(new SemanticDetector() {
+                    @Override public SemanticType type() { return cpfType; }
+                    @Override public Accumulator newAccumulator() {
+                        return new Accumulator() {
+                            long count;
+                            @Override public void accept(String raw) { count++; }
+                            @Override public SemanticEvidence finish(int minimumEvidenceValues) {
+                                return new SemanticEvidence(cpfType, count, count, count, 0, 1, 1,
+                                        1, true, "synthetic strong CPF evidence");
+                            }
+                        };
+                    }
+                })).normalizer(normalizer).build();
+        AnalysisResult currentWins = cpfEngine.analyze(new AnalysisRequest(
+                new MemorySource(), schema, null, conflictingKnowledge));
+        assertEquals("customer.document", currentWins.candidatesByColumn().get("c0").getFirst().targetFieldId());
+        assertTrue(currentWins.candidatesByColumn().get("c0").stream()
+                .filter(candidate -> candidate.targetFieldId().equals("customer.code"))
+                .findFirst().orElseThrow().eligible() == false);
+    }
+
+    @Test void noOpIsTheBackwardCompatibleDefaultAndPlanFreezesKnowledgeSnapshot() {
+        var reader = new MemoryReader(List.of("Name"), List.of(List.of("Synthetic")), new AtomicBoolean());
+        var schema = new TargetSchema("items", "1", "items", "", List.of(
+                new TargetField("item.name", "Name", List.of(), PhysicalType.TEXT, Set.of(), true)));
+        var engine = MappingEngine.builder().readers(List.of(reader)).build();
+        var source = new MemorySource();
+        AnalysisResult implicit = engine.analyze(new AnalysisRequest(source, schema, null));
+        AnalysisResult explicit = engine.analyze(new AnalysisRequest(
+                source, schema, null, NoOpMappingKnowledgeBase.INSTANCE));
+        assertEquals(implicit.candidatesByColumn(), explicit.candidatesByColumn());
+        assertEquals(implicit.decisionsByColumn(), explicit.decisionsByColumn());
+        assertEquals(NoOpMappingKnowledgeBase.SNAPSHOT_ID, implicit.knowledgeSnapshotId());
+
+        MappingPlan plan = new MappingPlanner().create(implicit, schema, List.of(
+                new MappingPlanner.Selection("c0", "item.name", "test")));
+        assertEquals("1.1", plan.formatVersion());
+        assertEquals(implicit.knowledgeSnapshotId(), plan.knowledgeSnapshotId());
+        assertEquals(implicit.knowledgeVersion(), plan.knowledgeVersion());
+        var knowledge = new InMemoryMappingKnowledgeBase();
+        knowledge.record(MappingFeedback.confirmed("later", "2026-01-01T00:00:00Z", implicit,
+                schema, "c0", "item.name", new HeaderNormalizer(Map.of()), "synthetic-test"));
+        assertEquals(NoOpMappingKnowledgeBase.SNAPSHOT_ID, plan.knowledgeSnapshotId(),
+                "later feedback must not mutate an existing plan");
+        long eventsBeforeDryRun = knowledge.snapshot().eventCount();
+        assertEquals(1, engine.dryRun(new DryRunRequest(source, schema, plan, null, null)).rowsValid());
+        assertEquals(eventsBeforeDryRun, knowledge.snapshot().eventCount(),
+                "dry run must not record or change feedback");
     }
 
     private static MappingPlan.FieldMapping configured(MappingPlan base, int index,

@@ -31,7 +31,7 @@ escrita e nao possui destino.
 Exemplo gerado pela CLI:
 
 ```bash
-java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar \
   plan target/analysis.json --schema examples/dry-run-customer.schema.json \
   --map c0=customer.document --map c1=customer.email \
   --out target/mapping.json
@@ -40,3 +40,12 @@ java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
 `planId` e deterministico para a mesma analise, mappings, ordem normalizada de
 mappings e configuracao dos steps. Ele e uma identidade reproduzivel, nao uma
 assinatura criptografica nem prova de aprovacao por uma pessoa especifica.
+
+## Evolucao compativel no 0.4
+
+O formato produzido passou a 1.1 e acrescenta `knowledgeSnapshotId` e
+`knowledgeVersion`. Ambos participam do `planId`, congelando a proveniencia
+historica da analise. O plano nao consulta a knowledge base durante dry run e
+nao muda com eventos posteriores. Documentos 1.0 sem esses campos continuam
+desserializaveis com o default `NO_KNOWLEDGE`; os demais invariantes 1.0
+permanecem. Consulte [JSON_CONTRACTS_0.4.md](JSON_CONTRACTS_0.4.md).

@@ -8,6 +8,7 @@ import java.util.Objects;
 public record MappingPlan(String formatVersion, String planId, String engineVersion,
         String sourceId, String sourceFingerprint, String schemaId, String schemaVersion,
         String schemaFingerprint, String configurationVersion, String configurationFingerprint,
+        String knowledgeSnapshotId, String knowledgeVersion,
         List<FieldMapping> mappings, List<String> unmappedSourceColumns,
         List<String> confirmedSourceColumns) {
     public MappingPlan {
@@ -17,8 +18,24 @@ public record MappingPlan(String formatVersion, String planId, String engineVers
         requireText(schemaVersion, "schemaVersion"); requireText(schemaFingerprint, "schemaFingerprint");
         requireText(configurationVersion, "configurationVersion");
         requireText(configurationFingerprint, "configurationFingerprint");
+        knowledgeSnapshotId = knowledgeSnapshotId == null ? NoOpMappingKnowledgeBase.SNAPSHOT_ID : knowledgeSnapshotId;
+        knowledgeVersion = knowledgeVersion == null ? "1.0" : knowledgeVersion;
+        requireText(knowledgeSnapshotId, "knowledgeSnapshotId");
+        requireText(knowledgeVersion, "knowledgeVersion");
         mappings = List.copyOf(mappings); unmappedSourceColumns = List.copyOf(unmappedSourceColumns);
         confirmedSourceColumns = List.copyOf(confirmedSourceColumns);
+    }
+
+    /** Backward-compatible constructor for MappingPlan 1.0 without knowledge metadata. */
+    public MappingPlan(String formatVersion, String planId, String engineVersion,
+            String sourceId, String sourceFingerprint, String schemaId, String schemaVersion,
+            String schemaFingerprint, String configurationVersion, String configurationFingerprint,
+            List<FieldMapping> mappings, List<String> unmappedSourceColumns,
+            List<String> confirmedSourceColumns) {
+        this(formatVersion, planId, engineVersion, sourceId, sourceFingerprint, schemaId,
+                schemaVersion, schemaFingerprint, configurationVersion, configurationFingerprint,
+                NoOpMappingKnowledgeBase.SNAPSHOT_ID, "1.0", mappings, unmappedSourceColumns,
+                confirmedSourceColumns);
     }
 
     /** One explicit source-to-target mapping and its ordered execution steps. */

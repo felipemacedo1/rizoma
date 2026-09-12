@@ -76,13 +76,28 @@ incrementos posteriores verificados localmente.
 - [x] CLI `plan`/`dry-run` e API Java sem porta de destino.
 - [x] Regressao do corpus 0.2 e gates de cobertura preservados.
 - [x] Java 21/25, quickstart e volume 1M verificados e registrados.
-- [x] Consolidar o milestone em commit/push quando solicitado.
+- [x] Consolidado e persistido no remoto no commit `0cc0a8c`.
+
+## 0.4: feedback historico deterministico
+
+- [x] `MappingFeedback` 1.0 imutavel para confirmacao, rejeicao e correcao.
+- [x] Knowledge base NoOp default e InMemory limitada/indexada no core.
+- [x] Adaptador experimental JSON Lines limitado e estrito na CLI.
+- [x] Isolamento exato por schema/fingerprint, target, nome normalizado, locale
+  e contexto.
+- [x] Score/reliability historicos deterministas, explicados e com peso limitado.
+- [x] Snapshot de knowledge no `AnalysisResult` 1.3 e `MappingPlan` 1.1.
+- [x] CLI para feedback explicito e `analyze --knowledge`.
+- [x] Corpus development/evaluation separado, incluindo melhora, supressao,
+  conflito e caso deliberadamente piorado.
+- [x] Regressao dos contratos de relatorio 1.0/1.1/1.2 e plano 1.0.
+- [x] Consolidado administrativamente em commit/push quando solicitado.
 
 ## Versoes seguintes
 
 - **0.2:** implementado, verificado e persistido no remoto.
-- **0.3:** transformacao, validacao, plano ligado a fingerprints e dry run sem sink.
-- **0.4:** feedback e knowledge base.
+- **0.3:** implementado, verificado e persistido no remoto.
+- **0.4:** feedback e knowledge base implementados, verificados e persistidos.
 - **0.5:** matching global bipartido opt-in.
 - **0.6:** SPI documentada e novas fontes orientadas por demanda.
 - **0.9:** API candidate, hardening e benchmarks publicados.

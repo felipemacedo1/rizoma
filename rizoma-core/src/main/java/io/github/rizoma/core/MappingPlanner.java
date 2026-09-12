@@ -50,10 +50,11 @@ public final class MappingPlanner {
         List<String> confirmed = mappings.stream().map(MappingPlan.FieldMapping::sourceColumnId).toList();
         String canonical = canonical(analysis.sourceFingerprint(), analysis.schemaFingerprint(),
                 analysis.configurationFingerprint(), mappings);
-        return new MappingPlan("1.0", sha256(canonical), MappingEngine.ENGINE_VERSION,
+        return new MappingPlan("1.1", sha256(canonical + '|' + analysis.knowledgeSnapshotId()
+                        + '|' + analysis.knowledgeVersion()), MappingEngine.ENGINE_VERSION,
                 analysis.sourceId(), analysis.sourceFingerprint(), analysis.schemaId(), analysis.schemaVersion(),
                 analysis.schemaFingerprint(), analysis.configurationVersion(), analysis.configurationFingerprint(),
-                mappings, unmapped, confirmed);
+                analysis.knowledgeSnapshotId(), analysis.knowledgeVersion(), mappings, unmapped, confirmed);
     }
 
     /** Replaces one mapping's ordered steps and returns a plan with a recalculated deterministic ID. */
@@ -73,10 +74,12 @@ public final class MappingPlanner {
         if (!found) throw new IllegalArgumentException("source column is not mapped: " + sourceColumnId);
         mappings.sort(Comparator.comparing(MappingPlan.FieldMapping::sourceColumnId));
         String planId = sha256(canonical(plan.sourceFingerprint(), plan.schemaFingerprint(),
-                plan.configurationFingerprint(), mappings));
+                plan.configurationFingerprint(), mappings) + '|' + plan.knowledgeSnapshotId()
+                + '|' + plan.knowledgeVersion());
         return new MappingPlan(plan.formatVersion(), planId, plan.engineVersion(), plan.sourceId(),
                 plan.sourceFingerprint(), plan.schemaId(), plan.schemaVersion(), plan.schemaFingerprint(),
-                plan.configurationVersion(), plan.configurationFingerprint(), mappings,
+                plan.configurationVersion(), plan.configurationFingerprint(), plan.knowledgeSnapshotId(),
+                plan.knowledgeVersion(), mappings,
                 plan.unmappedSourceColumns(), plan.confirmedSourceColumns());
     }
 

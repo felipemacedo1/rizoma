@@ -1,0 +1,8 @@
+{
+  "formatVersion":"1.0","schemaId":"feedback-risk","schemaVersion":"1",
+  "context":"controlled-history-risk","locale":"pt-BR",
+  "fields":[
+    {"id":"customer.code","displayName":"Referencia Cliente","aliases":[],"physicalType":"TEXT","semanticTypes":[],"required":false},
+    {"id":"customer.name","displayName":"Referencia Cliente","aliases":[],"physicalType":"TEXT","semanticTypes":[],"required":false}
+  ]
+}

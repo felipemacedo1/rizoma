@@ -56,3 +56,15 @@
 - Normalizacao de CPF/CEP/telefone nao deve remover letras arbitrarias antes de
   validar a representacao; caso contrario um valor corrompido pode parecer
   canonico.
+- Feedback ruim pode piorar um empate lexical; manter esse caso no corpus torna
+  o risco mensuravel e impede alegar ganho universal por adicionar historico.
+- Rejeicao nao precisa de contribuicao negativa numerica: valor historico zero
+  com peso confiavel no denominador suprime o candidato sem sair do intervalo
+  `[0,1]` ou criar NaN.
+- Um snapshot imutavel por analise evita que gravacoes concorrentes mudem o
+  ranking no meio da execucao e fornece uma identidade auditavel ao plano.
+- Contagens historicas nao sao probabilidade. Suavizacao, saturacao e peso
+  limitado precisam aparecer separadamente na explicacao.
+- Um arquivo append-only deve rejeitar a ultima linha sem terminador: apos uma
+  queda, um JSON parcial que por acaso seja valido nao pode receber outro evento
+  na mesma linha silenciosamente.

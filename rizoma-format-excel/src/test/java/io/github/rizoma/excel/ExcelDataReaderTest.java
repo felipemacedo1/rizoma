@@ -237,7 +237,7 @@ class ExcelDataReaderTest {
         var request = new AnalysisRequest(new PathTabularSource(path), schema,
                 options("header", "first", "formula", "cached"));
         var result = engine.analyze(request);
-        assertEquals("1.2", result.formatVersion());
+        assertEquals("1.3", result.formatVersion());
         assertEquals("customer.name", result.candidatesByColumn().get("c0").getFirst().targetFieldId());
         assertEquals(1, result.rowsProcessed());
 

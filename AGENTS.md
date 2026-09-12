@@ -38,11 +38,11 @@ estado vigente.
 
 ## Proxima tarefa executavel
 
-O milestone 0.3 de transformacao, validacao e dry run sem destino esta
-consolidado. Iniciar o milestone 0.4 somente mediante tarefa especifica. O
-bloqueio de cobranca do GitHub Actions e uma pendencia operacional conhecida e
-nao impede desenvolvimento local verificado; nao gastar tempo com esse bloqueio
-ate nova orientacao.
+O milestone 0.4 de feedback historico esta implementado, verificado e
+consolidado. Nao iniciar o 0.5 sem tarefa especifica. O bloqueio de cobranca do
+GitHub Actions e uma pendencia operacional conhecida e nao impede
+desenvolvimento local verificado; nao gastar tempo com esse bloqueio ate nova
+orientacao.
 
 ## Criterio de conclusao
 

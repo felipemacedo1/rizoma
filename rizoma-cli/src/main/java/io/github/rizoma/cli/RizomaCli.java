@@ -13,8 +13,11 @@ import io.github.rizoma.core.DryRunResult;
 import io.github.rizoma.core.EngineConfig;
 import io.github.rizoma.core.EngineException;
 import io.github.rizoma.core.MappingEngine;
+import io.github.rizoma.core.MappingFeedback;
+import io.github.rizoma.core.MappingKnowledgeBase;
 import io.github.rizoma.core.MappingPlan;
 import io.github.rizoma.core.MappingPlanner;
+import io.github.rizoma.core.NoOpMappingKnowledgeBase;
 import io.github.rizoma.core.PathTabularSource;
 import io.github.rizoma.core.SemanticDetector;
 import io.github.rizoma.core.Validator;
@@ -29,10 +32,12 @@ import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -42,10 +47,10 @@ import picocli.CommandLine.Spec;
 import picocli.CommandLine.Model.CommandSpec;
 
 /** Command-line adapter for Rizoma analysis reports. */
-@Command(name = "rizoma", mixinStandardHelpOptions = true, version = "rizoma 0.3.0-SNAPSHOT",
-        description = "Explainable CSV/XLS/XLSX analysis and read-only dry runs.",
+@Command(name = "rizoma", mixinStandardHelpOptions = true, version = "rizoma 0.4.0-SNAPSHOT",
+        description = "Explainable analysis, explicit feedback and read-only dry runs.",
         subcommands = {RizomaCli.Analyze.class, RizomaCli.Explain.class,
-                RizomaCli.Plan.class, RizomaCli.DryRun.class})
+                RizomaCli.Plan.class, RizomaCli.DryRun.class, RizomaCli.Feedback.class})
 public final class RizomaCli implements Runnable {
     /** Successful execution. */
     public static final int OK = 0;
@@ -104,6 +109,83 @@ public final class RizomaCli implements Runnable {
                 .normalizer(PtBrHeaderRules.normalizer())
                 .configuration(EngineConfig.defaults())
                 .build();
+    }
+
+    @Command(name = "feedback", mixinStandardHelpOptions = true,
+            description = "Record explicit human mapping feedback.",
+            subcommands = {Feedback.Confirm.class, Feedback.Reject.class, Feedback.Correct.class})
+    static final class Feedback implements Runnable {
+        @Spec CommandSpec spec;
+        @Override public void run() { spec.commandLine().usage(spec.commandLine().getOut()); }
+
+        private abstract static class FeedbackCommand implements Callable<Integer> {
+            @Spec CommandSpec spec;
+            @Parameters(index = "0", description = "Analysis report JSON path") Path report;
+            @Option(names = "--schema", required = true, description = "Target schema JSON path") Path schema;
+            @Option(names = "--knowledge", required = true, description = "Knowledge JSON Lines path") Path knowledge;
+            @Option(names = "--column-id", required = true, description = "Stable source column id such as c0") String columnId;
+            @Option(names = "--feedback-id", description = "Stable event id; generated when omitted") String feedbackId;
+            @Option(names = "--timestamp", description = "ISO-8601 UTC timestamp; current instant when omitted") String timestamp;
+            @Option(names = "--provenance", defaultValue = "explicit-cli-feedback") String provenance;
+
+            final MappingFeedback context(MappingFeedback.FeedbackType type,
+                    String suggestedTarget, String humanTarget) throws Exception {
+                requireRegularFile(report, "report");
+                requireRegularFile(schema, "schema");
+                if (sameFileOrPath(report, knowledge) || sameFileOrPath(schema, knowledge))
+                    throw new IllegalArgumentException("--knowledge must not overwrite the report or schema");
+                AnalysisResult analysis = Explain.readReport(report);
+                var targetSchema = JsonSupport.readSchema(schema);
+                String id = feedbackId == null ? UUID.randomUUID().toString() : feedbackId;
+                String at = timestamp == null ? Instant.now().toString() : timestamp;
+                return switch (type) {
+                    case CONFIRMED -> MappingFeedback.confirmed(id, at, analysis, targetSchema,
+                            columnId, suggestedTarget, PtBrHeaderRules.normalizer(), provenance);
+                    case REJECTED -> MappingFeedback.rejected(id, at, analysis, targetSchema,
+                            columnId, suggestedTarget, PtBrHeaderRules.normalizer(), provenance);
+                    case CORRECTED -> MappingFeedback.corrected(id, at, analysis, targetSchema,
+                            columnId, suggestedTarget, humanTarget, PtBrHeaderRules.normalizer(), provenance);
+                };
+            }
+
+            final Integer persist(MappingFeedback feedback) {
+                var store = new JsonLinesMappingKnowledgeBase(knowledge);
+                store.record(feedback);
+                var snapshot = store.snapshot();
+                spec.commandLine().getOut().printf("feedbackId=%s snapshot=%s events=%d%n",
+                        feedback.feedbackId(), snapshot.id(), snapshot.eventCount());
+                return OK;
+            }
+        }
+
+        @Command(name = "confirm", mixinStandardHelpOptions = true,
+                description = "Confirm a suggested source-to-target mapping.")
+        static final class Confirm extends FeedbackCommand {
+            @Option(names = "--target", required = true) String target;
+            @Override public Integer call() throws Exception {
+                return persist(context(MappingFeedback.FeedbackType.CONFIRMED, target, target));
+            }
+        }
+
+        @Command(name = "reject", mixinStandardHelpOptions = true,
+                description = "Reject a suggested source-to-target mapping.")
+        static final class Reject extends FeedbackCommand {
+            @Option(names = "--target", required = true) String target;
+            @Override public Integer call() throws Exception {
+                return persist(context(MappingFeedback.FeedbackType.REJECTED, target, ""));
+            }
+        }
+
+        @Command(name = "correct", mixinStandardHelpOptions = true,
+                description = "Reject one target and confirm a different target in one event.")
+        static final class Correct extends FeedbackCommand {
+            @Option(names = "--suggested-target", required = true) String suggestedTarget;
+            @Option(names = "--correct-target", required = true) String correctTarget;
+            @Override public Integer call() throws Exception {
+                return persist(context(MappingFeedback.FeedbackType.CORRECTED,
+                        suggestedTarget, correctTarget));
+            }
+        }
     }
 
     @Command(name = "plan", mixinStandardHelpOptions = true,
@@ -191,16 +273,21 @@ public final class RizomaCli implements Runnable {
         @Option(names = "--header", defaultValue = "detect", description = "detect, first or none") String header;
         @Option(names = "--sheet", description = "Excel only: exact worksheet name or zero-based index") String sheet;
         @Option(names = "--formula", description = "Excel only: cached, expression or reject") String formula;
+        @Option(names = "--knowledge", description = "Optional bounded feedback JSON Lines path") Path knowledge;
 
         @Override public Integer call() throws Exception {
             requireRegularFile(source, "source");
             requireRegularFile(schema, "schema");
-            if (sameFileOrPath(source, report) || sameFileOrPath(schema, report)) {
-                throw new IllegalArgumentException("--out must not overwrite the source or schema");
+            if (sameFileOrPath(source, report) || sameFileOrPath(schema, report)
+                    || knowledge != null && sameFileOrPath(knowledge, report)) {
+                throw new IllegalArgumentException("--out must not overwrite an input");
             }
             Map<String, String> options = readerOptions(header, charset, delimiter, sheet, formula);
+            MappingKnowledgeBase selectedKnowledge = knowledge == null
+                    ? NoOpMappingKnowledgeBase.INSTANCE : new JsonLinesMappingKnowledgeBase(knowledge);
             AnalysisResult result = engine().analyze(new AnalysisRequest(
-                    new PathTabularSource(source), JsonSupport.readSchema(schema), new AnalysisOptions(options, 42L)));
+                    new PathTabularSource(source), JsonSupport.readSchema(schema),
+                    new AnalysisOptions(options, 42L), selectedKnowledge));
             writeAtomically(report, result);
             return OK;
         }
@@ -234,6 +321,9 @@ public final class RizomaCli implements Runnable {
             writer.printf("Score %.6f | coverage %.6f | margin %s | confidenceIndex %.6f | calibration %s%n",
                     decision.score(), decision.coverage(), decision.margin() == null ? "unavailable" : String.format(java.util.Locale.ROOT, "%.6f", decision.margin()),
                     decision.confidenceIndex(), result.calibration());
+            writer.printf("Knowledge: snapshot=%s version=%s historicalPairs=%d%n",
+                    result.knowledgeSnapshotId(), result.knowledgeVersion(),
+                    result.historicalEvidenceByColumn().getOrDefault(id, List.of()).size());
             writer.printf("Profile: rows=%d nullRatio=%.6f cardinality=%d (%s) uniqueRatio=%.6f entropy=%s%n",
                     profile.rowCount(), statistics.nullRatio(), statistics.cardinality().value(),
                     statistics.cardinality().accuracy(), statistics.uniqueRatio(),
@@ -271,7 +361,7 @@ public final class RizomaCli implements Runnable {
         private static AnalysisResult readReport(Path report) throws IOException {
             try {
                 AnalysisResult result = JsonSupport.MAPPER.readValue(report.toFile(), AnalysisResult.class);
-                if (!List.of("1.0", "1.1", "1.2").contains(result.formatVersion())) {
+                if (!List.of("1.0", "1.1", "1.2", "1.3").contains(result.formatVersion())) {
                     throw new IllegalArgumentException("unsupported report formatVersion");
                 }
                 return result;

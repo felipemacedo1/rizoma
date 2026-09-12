@@ -2,8 +2,9 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-jar="$project_dir/rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar"
+jar="$project_dir/rizoma-cli/target/rizoma-cli-0.4.0-SNAPSHOT-all.jar"
 output_dir="$project_dir/target/quickstart"
+knowledge="$output_dir/knowledge.jsonl"
 
 if [ ! -f "$jar" ]; then
   printf '%s\n' "CLI jar not found; run ./mvnw package first" >&2
@@ -15,6 +16,14 @@ java -jar "$jar" analyze "$project_dir/examples/clientes.csv" \
   --schema "$project_dir/examples/customer.schema.json" \
   --out "$output_dir/report.json"
 java -jar "$jar" explain "$output_dir/report.json" --column "CPF Cliente"
+java -jar "$jar" feedback confirm "$output_dir/report.json" \
+  --schema "$project_dir/examples/customer.schema.json" \
+  --knowledge "$knowledge" --column-id c1 --target customer.document \
+  --feedback-id quickstart-document-confirmation --timestamp 2026-01-01T00:00:00Z
+java -jar "$jar" analyze "$project_dir/examples/clientes.csv" \
+  --schema "$project_dir/examples/customer.schema.json" \
+  --knowledge "$knowledge" --out "$output_dir/report-with-history.json"
+java -jar "$jar" explain "$output_dir/report-with-history.json" --column-id c1
 
 java -jar "$jar" analyze "$project_dir/examples/dry-run-customers.csv" \
   --schema "$project_dir/examples/dry-run-customer.schema.json" \
@@ -31,15 +40,22 @@ java -jar "$jar" dry-run "$project_dir/examples/dry-run-customers.csv" \
   --mapping "$output_dir/mapping.json" --out "$output_dir/dry-run.json" \
   --delimiter semicolon --header first
 
-python3 - "$output_dir/report.json" "$output_dir/dry-run.json" <<'PY'
+python3 - "$output_dir/report.json" "$output_dir/report-with-history.json" \
+  "$output_dir/dry-run.json" "$knowledge" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as stream:
     analysis = json.load(stream)
 with open(sys.argv[2], encoding="utf-8") as stream:
+    history = json.load(stream)
+with open(sys.argv[3], encoding="utf-8") as stream:
     dry_run = json.load(stream)
 assert analysis["rowsProcessed"] == 20
+assert history["historicalEvidenceByColumn"]["c1"][0]["confirmedCount"] == 1
 assert dry_run["rowsProcessed"] == 3
 assert dry_run["rowsValid"] == 2
 assert dry_run["rowsInvalid"] == 1
-print("quickstart: analysis=20 rows; dry-run=3 rows (2 valid, 1 invalid)")
+with open(sys.argv[4], encoding="utf-8") as stream:
+    persisted = stream.read()
+assert "529.982.247-25" not in persisted
+print("quickstart: analysis=20 rows; feedback=1 event; dry-run=3 rows (2 valid, 1 invalid)")
 PY

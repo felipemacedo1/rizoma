@@ -10,7 +10,9 @@ import io.github.rizoma.core.ColumnProfile;
 import io.github.rizoma.core.CoreSemanticDetectors;
 import io.github.rizoma.core.EngineConfig;
 import io.github.rizoma.core.MappingEngine;
+import io.github.rizoma.core.MappingPlan;
 import io.github.rizoma.core.DryRunResult;
+import io.github.rizoma.core.NoOpMappingKnowledgeBase;
 import io.github.rizoma.core.PathTabularSource;
 import io.github.rizoma.core.SemanticDetector;
 import io.github.rizoma.csv.CsvDataReader;
@@ -69,20 +71,25 @@ class RizomaCliTest {
         assertEquals(library.decisionsByColumn(), cli.decisionsByColumn());
     }
 
-    @Test void explainRemainsCompatibleWithAnalysisReportVersionsOneZeroAndOneOne() throws Exception {
-        Path currentReport = temporary.resolve("report-1.2.json");
+    @Test void explainRemainsCompatibleWithAnalysisReportVersionsOneZeroThroughOneTwo() throws Exception {
+        Path currentReport = temporary.resolve("report-1.3.json");
         assertEquals(0, run("analyze", example("clientes.csv").toString(), "--schema",
                 example("customer.schema.json").toString(), "--out", currentReport.toString()));
 
-        for (String version : List.of("1.0", "1.1")) {
+        for (String version : List.of("1.0", "1.1", "1.2")) {
             ObjectNode legacy = (ObjectNode) JsonSupport.MAPPER.readTree(currentReport.toFile());
             legacy.put("formatVersion", version);
-            legacy.remove("prunedCandidatesByColumn");
-            legacy.withArray("profiles").forEach(node -> {
-                ((ObjectNode) node).remove("statistics");
-                node.withObject("semanticEvidence").properties().forEach(entry ->
-                        ((ObjectNode) entry.getValue()).remove("semanticConfidence"));
-            });
+            legacy.remove("knowledgeSnapshotId");
+            legacy.remove("knowledgeVersion");
+            legacy.remove("historicalEvidenceByColumn");
+            if (!version.equals("1.2")) {
+                legacy.remove("prunedCandidatesByColumn");
+                legacy.withArray("profiles").forEach(node -> {
+                    ((ObjectNode) node).remove("statistics");
+                    node.withObject("semanticEvidence").properties().forEach(entry ->
+                            ((ObjectNode) entry.getValue()).remove("semanticConfidence"));
+                });
+            }
             if (version.equals("1.0")) ((ObjectNode) legacy.get("structure")).remove("attributes");
             Path legacyReport = temporary.resolve("report-" + version + ".json");
             JsonSupport.MAPPER.writeValue(legacyReport.toFile(), legacy);
@@ -96,9 +103,13 @@ class RizomaCliTest {
             assertTrue(output.toString().contains("customer.document"));
             AnalysisResult parsed = JsonSupport.MAPPER.readValue(legacyReport.toFile(), AnalysisResult.class);
             if (version.equals("1.0")) assertEquals(Map.of(), parsed.structure().attributes());
-            assertEquals(Map.of(), parsed.prunedCandidatesByColumn());
-            assertEquals(ColumnProfile.MeasureAccuracy.UNAVAILABLE,
-                    parsed.profiles().getFirst().statistics().cardinality().accuracy());
+            assertEquals(NoOpMappingKnowledgeBase.SNAPSHOT_ID, parsed.knowledgeSnapshotId());
+            assertTrue(parsed.historicalEvidenceByColumn().isEmpty());
+            if (!version.equals("1.2")) {
+                assertEquals(Map.of(), parsed.prunedCandidatesByColumn());
+                assertEquals(ColumnProfile.MeasureAccuracy.UNAVAILABLE,
+                        parsed.profiles().getFirst().statistics().cardinality().accuracy());
+            }
         }
     }
 
@@ -170,6 +181,12 @@ class RizomaCliTest {
                 "--out", source.toString(), "--delimiter", "comma", "--header", "first");
         assertEquals(RizomaCli.INVALID_INPUT, exit);
         assertEquals(original, Files.readString(source));
+
+        Path knowledge = temporary.resolve("knowledge.jsonl");
+        Files.writeString(knowledge, "");
+        assertEquals(RizomaCli.INVALID_INPUT, run("analyze", source.toString(), "--schema",
+                example("customer.schema.json").toString(), "--knowledge", knowledge.toString(),
+                "--out", knowledge.toString(), "--delimiter", "comma", "--header", "first"));
     }
 
     @Test void analyzeSupportsXlsxThroughTheSameCliAndEnginePipeline() throws Exception {
@@ -242,6 +259,17 @@ class RizomaCliTest {
         assertEquals(0, run("analyze", source.toString(), "--schema", schema.toString(), "--out", analysis.toString()));
         assertEquals(0, run("plan", analysis.toString(), "--schema", schema.toString(), "--out", plan.toString(),
                 "--map", "c0=customer.document", "--map", "c1=order.quantity"));
+        MappingPlan currentPlan = JsonSupport.MAPPER.readValue(plan.toFile(), MappingPlan.class);
+        assertEquals("1.1", currentPlan.formatVersion());
+        assertEquals(NoOpMappingKnowledgeBase.SNAPSHOT_ID, currentPlan.knowledgeSnapshotId());
+        ObjectNode legacyPlanJson = (ObjectNode) JsonSupport.MAPPER.readTree(plan.toFile());
+        legacyPlanJson.put("formatVersion", "1.0");
+        legacyPlanJson.remove("knowledgeSnapshotId");
+        legacyPlanJson.remove("knowledgeVersion");
+        Path legacyPlan = temporary.resolve("mapping-1.0.json");
+        JsonSupport.MAPPER.writeValue(legacyPlan.toFile(), legacyPlanJson);
+        MappingPlan parsedLegacyPlan = JsonSupport.MAPPER.readValue(legacyPlan.toFile(), MappingPlan.class);
+        assertEquals(NoOpMappingKnowledgeBase.SNAPSHOT_ID, parsedLegacyPlan.knowledgeSnapshotId());
         assertEquals(0, run("dry-run", source.toString(), "--schema", schema.toString(), "--mapping", plan.toString(),
                 "--out", result.toString(), "--max-issue-samples", "2"));
 
@@ -293,6 +321,60 @@ class RizomaCliTest {
         DryRunResult dryRun = JsonSupport.MAPPER.readValue(result.toFile(), DryRunResult.class);
         assertEquals(1, dryRun.rowsValid());
         assertEquals(1, dryRun.transformationsApplied());
+    }
+
+    @Test void cliRecordsFeedbackExplicitlyAndReusesItWithoutPersistingCells() throws Exception {
+        Path firstSource = temporary.resolve("first.csv");
+        Files.writeString(firstSource, "Cod Cli\nA-001\n");
+        Path secondSource = temporary.resolve("second.csv");
+        Files.writeString(secondSource, "Cod. Cliente\nA-002\n");
+        Path schema = temporary.resolve("feedback.schema.json");
+        Files.writeString(schema, """
+                {"formatVersion":"1.0","schemaId":"customer","schemaVersion":"1","context":"customer","locale":"pt-BR","fields":[
+                  {"id":"customer.code","displayName":"Customer identifier","physicalType":"TEXT","semanticTypes":[],"required":false},
+                  {"id":"customer.name","displayName":"Name","physicalType":"TEXT","semanticTypes":[],"required":false}
+                ]}
+                """);
+        Path firstReport = temporary.resolve("first.json");
+        Path knowledge = temporary.resolve("knowledge.jsonl");
+        Path secondReport = temporary.resolve("second.json");
+        assertEquals(0, run("analyze", firstSource.toString(), "--schema", schema.toString(),
+                "--out", firstReport.toString(), "--header", "first", "--delimiter", "comma"));
+        assertEquals(0, run("feedback", "confirm", firstReport.toString(), "--schema", schema.toString(),
+                "--knowledge", knowledge.toString(), "--column-id", "c0", "--target", "customer.code",
+                "--feedback-id", "synthetic-confirmation", "--timestamp", "2026-01-01T00:00:00Z"));
+        assertEquals(0, run("analyze", secondSource.toString(), "--schema", schema.toString(),
+                "--out", secondReport.toString(), "--header", "first", "--delimiter", "comma",
+                "--knowledge", knowledge.toString()));
+
+        AnalysisResult result = JsonSupport.MAPPER.readValue(secondReport.toFile(), AnalysisResult.class);
+        assertEquals("1.3", result.formatVersion());
+        assertEquals(1, result.historicalEvidenceByColumn().get("c0").getFirst().confirmedCount());
+        var historical = result.candidatesByColumn().get("c0").stream()
+                .filter(candidate -> candidate.targetFieldId().equals("customer.code"))
+                .findFirst().orElseThrow().components().stream()
+                .filter(component -> component.id().equals("history")).findFirst().orElseThrow();
+        assertTrue(historical.available());
+        assertTrue(historical.contribution() > 0);
+        assertFalse(Files.readString(knowledge).contains("A-001"));
+        assertFalse(Files.readString(secondReport).contains("A-002"));
+
+        var explain = new StringWriter();
+        assertEquals(0, RizomaCli.execute(new String[]{"explain", secondReport.toString(), "--column-id", "c0"},
+                new PrintWriter(explain, true), new PrintWriter(new StringWriter(), true)));
+        assertTrue(explain.toString().contains("Knowledge: snapshot="));
+        assertTrue(explain.toString().contains("confirmed=1"));
+
+        Path otherKnowledge = temporary.resolve("other-knowledge.jsonl");
+        assertEquals(0, run("feedback", "reject", firstReport.toString(), "--schema", schema.toString(),
+                "--knowledge", otherKnowledge.toString(), "--column-id", "c0", "--target", "customer.name",
+                "--feedback-id", "synthetic-rejection", "--timestamp", "2026-01-02T00:00:00Z"));
+        assertEquals(0, run("feedback", "correct", firstReport.toString(), "--schema", schema.toString(),
+                "--knowledge", otherKnowledge.toString(), "--column-id", "c0",
+                "--suggested-target", "customer.name", "--correct-target", "customer.code",
+                "--feedback-id", "synthetic-correction", "--timestamp", "2026-01-03T00:00:00Z"));
+        var otherSnapshot = new JsonLinesMappingKnowledgeBase(otherKnowledge).snapshot();
+        assertEquals(2, otherSnapshot.eventCount());
     }
 
     private static AnalysisResult libraryAnalyze(Path source, Path schemaPath) throws Exception {

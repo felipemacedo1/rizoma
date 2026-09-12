@@ -29,7 +29,7 @@ import java.util.Set;
  * thread-safety constraints.
  */
 public final class MappingEngine {
-    public static final String ENGINE_VERSION = "0.3.0-SNAPSHOT";
+    public static final String ENGINE_VERSION = "0.4.0-SNAPSHOT";
     private final List<DataReader> readers;
     private final List<SemanticDetector> detectors;
     private final EngineConfig config;
@@ -79,6 +79,8 @@ public final class MappingEngine {
         Objects.requireNonNull(request, "request");
         long started = System.nanoTime();
         try {
+            MappingKnowledgeBase.KnowledgeSnapshot knowledge = request.knowledgeBase().snapshot();
+            validateKnowledgeSnapshot(knowledge);
             long size = request.source().size();
             if (size > config.limits().maxBytes()) {
                 throw new EngineException("SOURCE_TOO_LARGE", "source exceeds configured byte limit");
@@ -120,7 +122,7 @@ public final class MappingEngine {
             String schemaFingerprint = schemaFingerprint(request.targetSchema());
             String configFingerprint = configurationFingerprint(request.options());
             return score(request, structure, rows, profiles, warnings,
-                    sourceFingerprint, schemaFingerprint, configFingerprint);
+                    sourceFingerprint, schemaFingerprint, configFingerprint, knowledge);
         } catch (EngineException e) {
             throw e;
         } catch (InterruptedException e) {
@@ -128,6 +130,18 @@ public final class MappingEngine {
             throw new EngineException("CANCELLED", "analysis was interrupted", e);
         } catch (Exception e) {
             throw new EngineException("ANALYSIS_FAILED", "analysis failed without exposing source data", e);
+        }
+    }
+
+    private static void validateKnowledgeSnapshot(MappingKnowledgeBase.KnowledgeSnapshot snapshot) {
+        if (snapshot == null || snapshot.id() == null || snapshot.id().isBlank()
+                || snapshot.version() == null || snapshot.version().isBlank()
+                || snapshot.id().length() > 512 || snapshot.version().length() > 64
+                || snapshot.id().indexOf('\n') >= 0 || snapshot.id().indexOf('\r') >= 0
+                || snapshot.version().indexOf('\n') >= 0 || snapshot.version().indexOf('\r') >= 0
+                || snapshot.eventCount() < 0) {
+            throw new EngineException("INVALID_KNOWLEDGE_SNAPSHOT",
+                    "knowledge snapshot metadata is invalid or unsafe");
         }
     }
 
@@ -186,7 +200,8 @@ public final class MappingEngine {
 
     private void validatePlan(DryRunRequest request) throws Exception {
         MappingPlan plan = request.plan();
-        if (!plan.formatVersion().equals("1.0")) throw new EngineException("UNSUPPORTED_PLAN", "unsupported mapping plan format");
+        if (!List.of("1.0", "1.1").contains(plan.formatVersion()))
+            throw new EngineException("UNSUPPORTED_PLAN", "unsupported mapping plan format");
         if (!plan.engineVersion().equals(ENGINE_VERSION)) throw new EngineException("REQUIRE_REANALYSIS", "mapping plan engine version differs");
         String sourceFingerprint = request.source().sha256();
         if (!plan.sourceId().equals(request.source().id()) || !plan.sourceFingerprint().equals(sourceFingerprint))
@@ -376,9 +391,11 @@ public final class MappingEngine {
 
     private AnalysisResult score(AnalysisRequest request, DataReader.SourceStructure structure,
             long rows, List<ColumnProfile> profiles, List<String> warnings,
-            String sourceFingerprint, String schemaFingerprint, String configFingerprint) {
+            String sourceFingerprint, String schemaFingerprint, String configFingerprint,
+            MappingKnowledgeBase.KnowledgeSnapshot knowledge) {
         var allCandidates = new LinkedHashMap<String, List<MappingCandidate>>();
         var allPruned = new LinkedHashMap<String, List<PrunedCandidate>>();
+        var allHistorical = new LinkedHashMap<String, List<HistoricalEvidence>>();
         var decisions = new LinkedHashMap<String, MappingDecision>();
         var unmatched = new ArrayList<String>();
         Map<String, TargetField> targets = new HashMap<>();
@@ -387,13 +404,20 @@ public final class MappingEngine {
         for (ColumnProfile profile : profiles) {
             ColumnFeatures features = featureExtractor.extract(profile);
             var candidates = new ArrayList<MappingCandidate>();
-            CandidateGeneration generation = candidates(features, request.targetSchema().fields());
+            var historical = new ArrayList<HistoricalEvidence>();
+            CandidateGeneration generation = candidates(features, request.targetSchema(),
+                    schemaFingerprint, knowledge);
             if (generation.totalPruned() > generation.pruned().size()) {
                 warnings.add("candidate pruning for source " + profile.column().id()
                         + " retained " + generation.pruned().size() + " of "
                         + generation.totalPruned() + " per-field explanations");
             }
-            for (TargetField target : generation.retained()) candidates.add(candidate(features, target));
+            for (TargetField target : generation.retained()) {
+                HistoricalEvidence evidence = historicalEvidence(features, request.targetSchema(),
+                        schemaFingerprint, target, knowledge);
+                candidates.add(candidate(features, target, evidence));
+                if (evidence != null && evidence.available()) historical.add(evidence);
+            }
             candidates.sort(Comparator.comparing(MappingCandidate::eligible).reversed()
                     .thenComparing(Comparator.comparingDouble(MappingCandidate::score).reversed())
                     .thenComparing(MappingCandidate::targetFieldId));
@@ -402,9 +426,15 @@ public final class MappingEngine {
             MappingDecision decision = decide(profile.column().id(), eligible, margin, List.of());
             decisions.put(profile.column().id(), decision);
             if (decision.targetFieldId() == null) unmatched.add(profile.column().id());
-            allCandidates.put(profile.column().id(), List.copyOf(candidates.subList(0,
-                    Math.min(config.limits().maxCandidates(), candidates.size()))));
+            List<MappingCandidate> reportedCandidates = List.copyOf(candidates.subList(0,
+                    Math.min(config.limits().maxCandidates(), candidates.size())));
+            allCandidates.put(profile.column().id(), reportedCandidates);
             allPruned.put(profile.column().id(), generation.pruned());
+            Set<String> reportedTargets = reportedCandidates.stream()
+                    .map(MappingCandidate::targetFieldId).collect(java.util.stream.Collectors.toSet());
+            historical.removeIf(item -> !reportedTargets.contains(item.targetFieldId()));
+            historical.sort(Comparator.comparing(HistoricalEvidence::targetFieldId));
+            allHistorical.put(profile.column().id(), List.copyOf(historical));
         }
 
         var conflicts = detectConflicts(decisions, targets);
@@ -418,14 +448,17 @@ public final class MappingEngine {
             }
         }
 
-        return new AnalysisResult("1.2", ENGINE_VERSION, "UNCALIBRATED",
+        return new AnalysisResult("1.3", ENGINE_VERSION, "UNCALIBRATED",
                 request.source().id(), sourceFingerprint, request.targetSchema().id(),
                 request.targetSchema().version(), schemaFingerprint, config.version(), configFingerprint,
                 structure, rows, profiles, allCandidates, allPruned, decisions, unmatched, conflicts,
-                limit(warnings, config.limits().maxWarnings()), limit(List.of(), config.limits().maxErrors()));
+                limit(warnings, config.limits().maxWarnings()), limit(List.of(), config.limits().maxErrors()),
+                knowledge.id(), knowledge.version(), allHistorical);
     }
 
-    private CandidateGeneration candidates(ColumnFeatures source, List<TargetField> targets) {
+    private CandidateGeneration candidates(ColumnFeatures source, TargetSchema schema,
+            String schemaFingerprint, MappingKnowledgeBase.KnowledgeSnapshot knowledge) {
+        List<TargetField> targets = schema.fields();
         if (targets.size() <= config.candidatePruningThreshold() || source.compactName().isEmpty()) {
             return new CandidateGeneration(targets, List.of(), 0);
         }
@@ -446,11 +479,15 @@ public final class MappingEngine {
                     .mapToDouble(SemanticDetector.SemanticEvidence::semanticConfidence).max().orElse(0);
             boolean physical = target.physicalType() != PhysicalType.TEXT
                     && target.physicalType() == source.inferredType();
+            HistoricalEvidence history = historicalEvidence(source, schema, schemaFingerprint, target, knowledge);
+            boolean historical = history != null && history.available();
             boolean strongContradiction = source.semanticEvidence().values().stream()
                     .anyMatch(item -> item.strongIdentity() && !target.semanticTypes().contains(item.type()));
             double signal = .65 * tokenOverlap + .30 * semantic + (physical ? .05 : 0);
-            if (exactAlias || tokenOverlap > 0 || semantic > 0 || physical) {
-                potentials.add(new PotentialTarget(target, exactAlias, signal));
+            if (exactAlias || tokenOverlap > 0 || semantic > 0 || physical || historical) {
+                double historicalSignal = historical ? config.weight("history")
+                        * history.reliability() * history.historicalScore() : 0;
+                potentials.add(new PotentialTarget(target, exactAlias, signal + historicalSignal));
             } else {
                 pruned.add(new PrunedCandidate(target.id(), strongContradiction
                         ? "strong semantic incompatibility and no lexical/type support"
@@ -482,7 +519,8 @@ public final class MappingEngine {
     private record CandidateGeneration(List<TargetField> retained, List<PrunedCandidate> pruned,
                                        int totalPruned) {}
 
-    private MappingCandidate candidate(ColumnFeatures features, TargetField target) {
+    private MappingCandidate candidate(ColumnFeatures features, TargetField target,
+            HistoricalEvidence history) {
         var components = new ArrayList<ScoreComponent>();
         var contradictions = new ArrayList<String>();
         components.add(lexical(features, target));
@@ -504,7 +542,17 @@ public final class MappingEngine {
                     "shape matches " + accepted.shapeMatches() + "/" + accepted.observed(), List.of()));
         }
         components.add(unavailable("distribution", "target distribution is not provided"));
-        components.add(unavailable("history", "mapping history is not implemented"));
+        if (history == null || !history.available()) {
+            components.add(unavailable("history", "no matching feedback in the selected knowledge snapshot"));
+        } else {
+            components.add(available("history", history.historicalScore(), history.reliability(),
+                    history.explanation() + ", confirmed=" + history.confirmedCount()
+                            + ", rejected=" + history.rejectedCount()
+                            + ", correctedTo=" + history.correctedToCount()
+                            + ", correctedFrom=" + history.correctedFromCount(),
+                    List.of("historical score is deterministic support, not probability",
+                            "recency decay is not applied in milestone 0.4")));
+        }
 
         for (var evidence : features.semanticEvidence().values()) {
             if (evidence.strongIdentity() && !target.semanticTypes().contains(evidence.type())) {
@@ -521,6 +569,14 @@ public final class MappingEngine {
         double confidence = contradictions.isEmpty() ? score * coverage : 0;
         return new MappingCandidate(target.id(), target.displayName(), finite(score), finite(coverage),
                 finite(confidence), contradictions.isEmpty(), components, contradictions);
+    }
+
+    private static HistoricalEvidence historicalEvidence(ColumnFeatures source, TargetSchema schema,
+            String schemaFingerprint, TargetField target,
+            MappingKnowledgeBase.KnowledgeSnapshot knowledge) {
+        if (source.normalizedName().isBlank()) return null;
+        return knowledge.find(new KnowledgeQuery(schema.id(), schema.version(), schemaFingerprint,
+                target.id(), source.normalizedName(), schema.locale(), schema.context()));
     }
 
     private ScoreComponent lexical(ColumnFeatures features, TargetField target) {
