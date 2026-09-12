@@ -10,6 +10,7 @@ import io.github.rizoma.core.ColumnProfile;
 import io.github.rizoma.core.CoreSemanticDetectors;
 import io.github.rizoma.core.EngineConfig;
 import io.github.rizoma.core.MappingEngine;
+import io.github.rizoma.core.DryRunResult;
 import io.github.rizoma.core.PathTabularSource;
 import io.github.rizoma.core.SemanticDetector;
 import io.github.rizoma.csv.CsvDataReader;
@@ -19,6 +20,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -221,6 +223,76 @@ class RizomaCliTest {
         assertEquals(RizomaCli.INVALID_INPUT, run("analyze", example("clientes.csv").toString(),
                 "--schema", example("customer.schema.json").toString(), "--out", report.toString(),
                 "--sheet", "0"));
+    }
+
+    @Test void analyzePlanAndDryRunFormAReadOnlyCsvWorkflow() throws Exception {
+        Path source = temporary.resolve("dry-run.csv");
+        Files.writeString(source, "Documento,Quantidade\n529.982.247-25,2\n000.000.000-00,not-a-number\n");
+        Path schema = temporary.resolve("dry-run.schema.json");
+        Files.writeString(schema, """
+                {"formatVersion":"1.0","schemaId":"dry-run","schemaVersion":"1","locale":"pt-BR","fields":[
+                  {"id":"customer.document","displayName":"CPF","aliases":["Documento"],"physicalType":"TEXT","semanticTypes":["br:cpf"],"required":true},
+                  {"id":"order.quantity","displayName":"Quantidade","aliases":[],"physicalType":"INTEGER","semanticTypes":[],"required":true}
+                ]}
+                """);
+        Path analysis = temporary.resolve("analysis.json");
+        Path plan = temporary.resolve("mapping.json");
+        Path result = temporary.resolve("dry-run.json");
+
+        assertEquals(0, run("analyze", source.toString(), "--schema", schema.toString(), "--out", analysis.toString()));
+        assertEquals(0, run("plan", analysis.toString(), "--schema", schema.toString(), "--out", plan.toString(),
+                "--map", "c0=customer.document", "--map", "c1=order.quantity"));
+        assertEquals(0, run("dry-run", source.toString(), "--schema", schema.toString(), "--mapping", plan.toString(),
+                "--out", result.toString(), "--max-issue-samples", "2"));
+
+        DryRunResult report = JsonSupport.MAPPER.readValue(result.toFile(), DryRunResult.class);
+        assertEquals("1.0", report.formatVersion());
+        assertEquals(2, report.rowsProcessed());
+        assertEquals(1, report.rowsValid());
+        assertEquals(1, report.rowsInvalid());
+        assertEquals(2, report.totalErrorCount());
+        assertTrue(report.errorCodes().containsKey("INVALID_CPF_CHECKSUM"));
+        assertTrue(report.errorCodes().containsKey("INVALID_LONG"));
+        assertFalse(Files.readString(result).contains("529.982.247-25"));
+        assertFalse(Files.readString(result).contains("not-a-number"));
+        assertEquals("529.982.247-25", Files.readAllLines(source).get(1).split(",")[0]);
+    }
+
+    @Test void dryRunUsesTheExistingExcelReaderWithTheSameBoundPlan() throws Exception {
+        Path source = temporary.resolve("dry-run.xlsx");
+        try (var workbook = new XSSFWorkbook()) {
+            var sheet = workbook.createSheet("Items");
+            var header = sheet.createRow(0);
+            header.createCell(0).setCellValue("Name");
+            header.createCell(1).setCellValue("Date");
+            var row = sheet.createRow(1);
+            row.createCell(0).setCellValue("Synthetic Item");
+            var date = row.createCell(1);
+            date.setCellValue(LocalDate.of(2026, 9, 11));
+            var style = workbook.createCellStyle();
+            style.setDataFormat(workbook.createDataFormat().getFormat("yyyy-mm-dd"));
+            date.setCellStyle(style);
+            try (var output = Files.newOutputStream(source)) { workbook.write(output); }
+        }
+        Path schema = temporary.resolve("item.schema.json");
+        Files.writeString(schema, """
+                {"formatVersion":"1.0","schemaId":"items","schemaVersion":"1","locale":"en-US","fields":[
+                  {"id":"item.name","displayName":"Name","physicalType":"TEXT","semanticTypes":[],"required":true},
+                  {"id":"item.date","displayName":"Date","physicalType":"DATE","semanticTypes":["core:date"],"required":true}
+                ]}
+                """);
+        Path analysis = temporary.resolve("excel-analysis.json");
+        Path plan = temporary.resolve("excel-plan.json");
+        Path result = temporary.resolve("excel-dry-run.json");
+        assertEquals(0, run("analyze", source.toString(), "--schema", schema.toString(), "--out", analysis.toString(),
+                "--sheet", "Items", "--header", "first"));
+        assertEquals(0, run("plan", analysis.toString(), "--schema", schema.toString(), "--out", plan.toString(),
+                "--map", "c0=item.name", "--map", "c1=item.date"));
+        assertEquals(0, run("dry-run", source.toString(), "--schema", schema.toString(), "--mapping", plan.toString(),
+                "--out", result.toString(), "--sheet", "Items", "--header", "first"));
+        DryRunResult dryRun = JsonSupport.MAPPER.readValue(result.toFile(), DryRunResult.class);
+        assertEquals(1, dryRun.rowsValid());
+        assertEquals(1, dryRun.transformationsApplied());
     }
 
     private static AnalysisResult libraryAnalyze(Path source, Path schemaPath) throws Exception {

@@ -47,3 +47,12 @@
   valor nao equivale ao pico exato. RSS continua sendo memoria total do processo.
 - Shortlist limitada nao basta para memoria limitada: explicacoes dos candidatos
   podados tambem precisam de teto e aviso quando forem truncadas.
+- Um dry run seguro nao deve receber um sink "no-op": omitir inteiramente a
+  porta de destino torna escrita impossivel pela API desta fase.
+- Vincular plano apenas ao `EngineConfig` e insuficiente; o fingerprint tambem
+  precisa refletir IDs/versoes dos transformers e validators disponiveis.
+- `maxErrors` limita a execucao, mas mapas de codigos e campos tambem precisam
+  de limite distinto dos exemplos para evitar cardinalidade hostil.
+- Normalizacao de CPF/CEP/telefone nao deve remover letras arbitrarias antes de
+  validar a representacao; caso contrario um valor corrompido pode parecer
+  canonico.

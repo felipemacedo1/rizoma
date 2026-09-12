@@ -8,6 +8,13 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Milestone 0.3: `MappingPlan` 1.0 ligado a fingerprints e confirmacoes
+  explicitas, transformers/validators tipados e `DryRunResult` 1.0.
+- Transformacoes String, Integer, Long, BigDecimal, LocalDate, Boolean e
+  canonicalizacao pt-BR de CPF, telefone e CEP.
+- Validacoes required, regex, length, enum, CPF checksum e ranges numerico/data.
+- CLI `plan` e `dry-run`, com policies de erro e relatorios limitados e
+  protegidos, sem qualquer sink de destino.
 - Milestone 0.2: Jaccard, Jaro, Jaro-Winkler, trigramas e cosine agrupados em
   subscore lexical explicavel.
 - Profiling limitado com cardinalidade exata/HLL, Space-Saving, entropia,
@@ -27,6 +34,10 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- Dry run sem porta de destino, com revalidacao de fingerprints e rejeicao de
+  plano incompleto para campos obrigatorios.
+- Totais de erro separados de exemplos/mapas limitados; valores originais e
+  transformados nao sao serializados.
 - `AUTO_MAP` desabilitado por padrao no core.
 - Amostras e mensagens publicas protegidas contra exposicao de celulas brutas.
 - Formulas nunca avaliadas; politicas `cached`, `expression` e `reject`.
@@ -45,18 +56,20 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Tests
 
+- Testes de pipeline, ambiguidade de data/decimal, zeros iniciais, policies,
+  fingerprints, limites, API sem CLI e fluxo CSV/XLSX pela CLI.
 - Regressao de `explain` para relatorio JSON 1.0 sem atributos introduzidos em
   1.1.
 - Rejeicao de relacionamento externo XLSX com prova de zero conexoes.
 
 ### Known limitations
 
-- O desenvolvimento esta em `0.2.0-SNAPSHOT`; nenhuma tag ou release foi
+- O desenvolvimento esta em `0.3.0-SNAPSHOT`; nenhuma tag ou release foi
   publicada.
 - Score e `confidenceIndex` sao heuristicas `UNCALIBRATED`, nao probabilidades.
 - XLS legado e a tabela de shared strings XLSX nao possuem memoria O(1).
-- Transformacao, validacao de importacao, dry run, destino e matching global nao
-  estao implementados.
+- Unique/foreign key, CNPJ, destino real e matching global nao estao
+  implementados; dry run nao equivale a importacao nem prontidao de producao.
 - O GitHub Actions permanece bloqueado por billing antes de executar os jobs.
 - O corpus atual e pequeno, nao calibrado e mantem uma falha de documento
   empresarial sem detector CNPJ.

@@ -21,19 +21,25 @@ Atualizado em: 2026-09-11
 `098628a` (que sucede o hardening `823a0cd`). CSV, XLS e XLSX compartilham API,
 pipeline e CLI; nenhuma tag ou release publica foi criada.
 
-**IMPLEMENTADO E VERIFICADO LOCALMENTE, AINDA NAO CONSOLIDADO EM COMMIT:**
-milestone 0.2. O perfil agora inclui cardinalidade exata limitada ou HLL,
+**IMPLEMENTADO, VERIFICADO E PERSISTIDO NO REMOTO:** milestone 0.2 no commit
+`e8acef6`. O perfil inclui cardinalidade exata limitada ou HLL,
 top-K Space-Saving, entropia, distribuicoes, estatistica numerica incremental,
 mistura de tipos e anomalias protegidas. Jaccard, Jaro, Jaro-Winkler, trigrama
 e cosine integram um subscore lexical correlacionado. Evidencia semantica separa
 forma, validade e confiabilidade; schemas grandes usam pruning explicavel. Um
 corpus sintetico reproduzivel mede ranking, abstencao, no-match, auto-map
-simulado e confusao semantica. O relatorio JSON atual e 1.2.
+simulado e confusao semantica. O relatorio JSON de analise atual e 1.2.
 
-**PLANEJADO / NAO IMPLEMENTADO:** detector completo de CNPJ e CEP,
-transformacao, validacao de importacao, dry run, destinos, feedback, Hungarian,
-plugins dinamicos, paralelismo, ML, embeddings e LLM. JMH foi conscientemente
-adiado ate o subscore lexical estabilizar.
+**IMPLEMENTADO, VERIFICADO E CONSOLIDADO:** milestone 0.3. Esta atualizacao
+integra o commit de consolidacao administrativa do milestone. `MappingPlan` 1.0 exige
+confirmacoes e fica ligado a fingerprints;
+transformers/validators tipados executam por linha; `DryRunResult` 1.0 publica
+contagens e problemas limitados/mascarados. API e CLI `plan`/`dry-run` nao
+possuem porta de destino e nao escrevem em sistema externo.
+
+**PLANEJADO / NAO IMPLEMENTADO:** detector completo de CNPJ e detector
+semantico de CEP, unique/FK, qualquer destino/importacao, feedback, Hungarian,
+plugins dinamicos, paralelismo, ML, embeddings e LLM. JMH continua adiado.
 
 ## Evidencias locais do 0.2
 
@@ -56,6 +62,24 @@ adiado ate o subscore lexical estabilizar.
   0.1 foi 36,88 s/162.364 KiB. Isso e teste de volume, nao benchmark controlado
   nem medida exata de pico de heap.
 
+## Evidencias locais do 0.3
+
+- `./mvnw clean verify` passou no OpenJDK 21.0.12 e no Temurin 25.0.4.1 LTS,
+  sempre com `--release 21`: 77 testes, zero falhas.
+- JaCoCo do core: 1.470/1.562 linhas (94,11%) e 932/1.159 branches (80,41%);
+  gates 85%/80% atendidos sem exclusoes.
+- O quickstart executou analyze/explain/plan/dry-run. A fixture 0.3 processou 3
+  linhas: 2 validas, 1 invalida e 7 erros de campo; o JSON nao continha os
+  valores brutos procurados.
+- O corpus 0.2 permaneceu inalterado: 22/23 top-1, 23/23 top-3, 7/7 abstencoes,
+  5/5 no-match e a falha `Registro X` preservada.
+- Volume comparavel ao 0.2: 1.000.000 registros, 3 colunas, 50.000.034 bytes,
+  Java 21 e `-Xmx256m`. Analyze 0.3: 34,94 s, RSS 174.784 KiB, maior heap
+  observado antes de GC 56.946 KiB. Dry run: 4,82 s, RSS 202.092 KiB, heap
+  observado 49.834 KiB, 1.000.000 validas, 1.000.000 transformacoes e
+  4.000.000 validacoes. Medidas sao de uma execucao end-to-end, nao JMH nem
+  pico exato de heap.
+
 ## Limites e riscos atuais
 
 - GitHub Actions permanece bloqueado por billing antes de iniciar jobs. E uma
@@ -73,10 +97,16 @@ adiado ate o subscore lexical estabilizar.
 - HLL `p=10` declara erro relativo esperado de 3,25%. Space-Saving e entropia
   aproximada sao marcados `ESTIMATED`; nenhuma aproximacao e publicada como
   exata.
-- A versao de desenvolvimento e `0.2.0-SNAPSHOT`. Nenhum artefato foi publicado.
+- MappingPlan e DryRunResult 1.0 sao contratos experimentais. Dry run cobre
+  apenas regras locais configuradas e nao equivale a importacao/prontidao para
+  producao.
+- MappingPlan nao e assinado e e tratado como configuracao confiavel. Regexes
+  customizadas usam `java.util.regex.Pattern`; custo patologico dentro de uma
+  linha ainda nao possui timeout isolado.
+- A versao de desenvolvimento e `0.3.0-SNAPSHOT`. Nenhum artefato foi publicado.
 
 ## Proximo passo
 
-Revisar o diff final e consolidar o milestone 0.2 somente quando commit/push
-forem solicitados. Nao iniciar o 0.3 nesta etapa. A pendencia do CI remoto
-permanece registrada sem bloquear trabalho local.
+Depois da consolidacao administrativa do 0.3, iniciar o milestone 0.4 somente
+mediante solicitacao especifica. A pendencia operacional do CI remoto permanece
+registrada sem bloquear trabalho local.

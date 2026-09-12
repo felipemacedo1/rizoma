@@ -23,17 +23,21 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Stateless orchestrator for explainable analysis. Instances are safe for
- * sequential reuse. Concurrent use is not guaranteed because supplied readers
- * and detectors may have their own thread-safety constraints.
+ * Stateless orchestrator for explainable analysis and dry runs. Instances are
+ * safe for sequential reuse. Concurrent use is not guaranteed because supplied
+ * readers, detectors, transformers and validators may have their own
+ * thread-safety constraints.
  */
 public final class MappingEngine {
-    public static final String ENGINE_VERSION = "0.2.0-SNAPSHOT";
+    public static final String ENGINE_VERSION = "0.3.0-SNAPSHOT";
     private final List<DataReader> readers;
     private final List<SemanticDetector> detectors;
     private final EngineConfig config;
     private final HeaderNormalizer normalizer;
     private final ColumnFeatureExtractor featureExtractor;
+    private final TransformationPipeline transformationPipeline;
+    private final Map<String, Validator<?>> validators;
+    private final String executionRegistryCanonical;
     private final SimilarityMetric dice = new DiceSimilarity();
     private final SimilarityMetric levenshtein = new LevenshteinSimilarity();
     private final SimilarityMetric jaccard = new JaccardSimilarity();
@@ -48,6 +52,18 @@ public final class MappingEngine {
         config = builder.config;
         normalizer = builder.normalizer;
         featureExtractor = new ColumnFeatureExtractor(normalizer);
+        transformationPipeline = new TransformationPipeline(builder.transformers);
+        var validatorMap = new LinkedHashMap<String, Validator<?>>();
+        for (Validator<?> validator : builder.validators) {
+            if (validatorMap.putIfAbsent(validator.id(), validator) != null)
+                throw new IllegalArgumentException("duplicate validator: " + validator.id());
+        }
+        validators = Map.copyOf(validatorMap);
+        var registry = new ArrayList<String>();
+        builder.transformers.forEach(item -> registry.add("transformer:" + item.id() + '@' + item.version()));
+        builder.validators.forEach(item -> registry.add("validator:" + item.id() + '@' + item.version()));
+        registry.sort(String::compareTo);
+        executionRegistryCanonical = registry.toString();
         if (readers.isEmpty()) throw new IllegalArgumentException("at least one reader is required");
         var types = new LinkedHashSet<SemanticType>();
         for (var detector : detectors) {
@@ -101,10 +117,8 @@ public final class MappingEngine {
             if (!sourceFingerprint.equals(fingerprintAfterRead)) {
                 throw new EngineException("SOURCE_CHANGED", "source content changed during analysis");
             }
-            String schemaFingerprint = fingerprint(schemaCanonical(request.targetSchema()));
-            String configFingerprint = fingerprint(configCanonical(config) + '|'
-                    + new java.util.TreeMap<>(request.options().readerOptions()) + '|'
-                    + request.options().sampleSeed());
+            String schemaFingerprint = schemaFingerprint(request.targetSchema());
+            String configFingerprint = configurationFingerprint(request.options());
             return score(request, structure, rows, profiles, warnings,
                     sourceFingerprint, schemaFingerprint, configFingerprint);
         } catch (EngineException e) {
@@ -114,6 +128,249 @@ public final class MappingEngine {
             throw new EngineException("CANCELLED", "analysis was interrupted", e);
         } catch (Exception e) {
             throw new EngineException("ANALYSIS_FAILED", "analysis failed without exposing source data", e);
+        }
+    }
+
+    /** Reopens a source and executes the configured plan without accepting any destination sink. */
+    public DryRunResult dryRun(DryRunRequest request) {
+        Objects.requireNonNull(request, "request");
+        long started = System.nanoTime();
+        try {
+            if (request.source().size() > config.limits().maxBytes())
+                throw new EngineException("SOURCE_TOO_LARGE", "source exceeds configured byte limit");
+            validatePlan(request);
+            DataReader reader = readers.stream().filter(item -> item.supports(request.source())).findFirst()
+                    .orElseThrow(() -> new EngineException("UNSUPPORTED_SOURCE", "no reader supports this source"));
+            DataReader.SourceStructure structure = reader.detect(request.source(), request.analysisOptions(), config.limits());
+            validateStructure(structure);
+            Map<String, Integer> positions = new HashMap<>();
+            structure.columns().forEach(column -> positions.put(column.id(), column.position()));
+            Map<String, TargetField> targets = new HashMap<>();
+            request.targetSchema().fields().forEach(field -> targets.put(field.id(), field));
+            for (var mapping : request.plan().mappings()) {
+                if (!positions.containsKey(mapping.sourceColumnId()) || !targets.containsKey(mapping.targetFieldId()))
+                    throw new EngineException("PLAN_STRUCTURE_MISMATCH", "mapping plan references an unavailable source or target field");
+            }
+
+            var counters = new DryRunCounters(request.dryRunOptions());
+            try (Dataset dataset = reader.open(request.source(), structure, request.analysisOptions(), config.limits())) {
+                var iterator = dataset.rows();
+                while (iterator.hasNext() && !counters.terminated) {
+                    checkExecution(started);
+                    Dataset.Row row = iterator.next();
+                    counters.rowsProcessed++;
+                    if (counters.rowsProcessed > config.limits().maxRecords())
+                        throw new EngineException("RECORD_LIMIT", "source exceeds configured record limit");
+                    counters.cellsProcessed += row.values().size();
+                    for (String raw : row.values()) {
+                        if (raw != null && !raw.isBlank()) counters.nonEmptyCells++;
+                        if (raw != null) counters.charactersObserved += raw.length();
+                    }
+                    RowExecutionResult result = executeRow(row, request, positions, targets, counters);
+                    counters.acceptRow(result);
+                }
+            }
+            String after = request.source().sha256();
+            if (!request.plan().sourceFingerprint().equals(after))
+                throw new EngineException("INVALIDATE_PLAN", "source content changed after the mapping plan was created");
+            return counters.result(request, Duration.ofNanos(System.nanoTime() - started).toMillis());
+        } catch (EngineException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new EngineException("CANCELLED", "dry run was interrupted", e);
+        } catch (Exception e) {
+            throw new EngineException("DRY_RUN_FAILED", "dry run failed without exposing source data", e);
+        }
+    }
+
+    private void validatePlan(DryRunRequest request) throws Exception {
+        MappingPlan plan = request.plan();
+        if (!plan.formatVersion().equals("1.0")) throw new EngineException("UNSUPPORTED_PLAN", "unsupported mapping plan format");
+        if (!plan.engineVersion().equals(ENGINE_VERSION)) throw new EngineException("REQUIRE_REANALYSIS", "mapping plan engine version differs");
+        String sourceFingerprint = request.source().sha256();
+        if (!plan.sourceId().equals(request.source().id()) || !plan.sourceFingerprint().equals(sourceFingerprint))
+            throw new EngineException("INVALIDATE_PLAN", "source identity or content differs from the analyzed source");
+        if (!plan.schemaId().equals(request.targetSchema().id())
+                || !plan.schemaVersion().equals(request.targetSchema().version())
+                || !plan.schemaFingerprint().equals(schemaFingerprint(request.targetSchema())))
+            throw new EngineException("REQUIRE_REANALYSIS", "target schema differs from the analyzed schema");
+        if (!plan.configurationVersion().equals(config.version())
+                || !plan.configurationFingerprint().equals(configurationFingerprint(request.analysisOptions())))
+            throw new EngineException("REQUIRE_REANALYSIS", "engine or reader configuration differs from analysis");
+        Set<String> mappedTargets = plan.mappings().stream()
+                .map(MappingPlan.FieldMapping::targetFieldId).collect(java.util.stream.Collectors.toSet());
+        if (request.targetSchema().fields().stream().anyMatch(field -> field.required() && !mappedTargets.contains(field.id())))
+            throw new EngineException("INCOMPLETE_PLAN", "mapping plan leaves a required target field unmapped");
+    }
+
+    private RowExecutionResult executeRow(Dataset.Row row, DryRunRequest request,
+            Map<String, Integer> positions, Map<String, TargetField> targets, DryRunCounters counters) {
+        var fields = new ArrayList<RowExecutionResult.FieldResult>();
+        var rowWarnings = new ArrayList<String>();
+        var rowErrors = new ArrayList<String>();
+        for (MappingPlan.FieldMapping mapping : request.plan().mappings()) {
+            String raw = row.values().get(positions.get(mapping.sourceColumnId()));
+            TargetField target = targets.get(mapping.targetFieldId());
+            var transformerIds = new ArrayList<String>();
+            var validatorIds = new ArrayList<String>();
+            var warnings = new ArrayList<String>();
+            var errors = new ArrayList<String>();
+            Object transformed = raw;
+            if (raw != null && !raw.isBlank()) {
+                var transformedResult = transformationPipeline.execute(raw, mapping.transformations(), target,
+                        request.targetSchema().locale());
+                counters.transformationsApplied += transformedResult.steps().size();
+                transformedResult.steps().forEach(step -> {
+                    transformerIds.add(step.transformerId());
+                    if (step.status() == ValueTransformer.Status.WARNING) warnings.add(step.code());
+                    if (step.status() == ValueTransformer.Status.FAILURE) errors.add(step.code());
+                });
+                transformed = transformedResult.value();
+            }
+            if (errors.isEmpty()) {
+                for (MappingPlan.Step step : mapping.validations()) {
+                    if ((raw == null || raw.isBlank()) && !step.id().equals("core:required")) continue;
+                    Validator<?> validator = validators.get(step.id());
+                    if (validator == null || !validator.version().equals(step.version()))
+                        throw new EngineException("UNKNOWN_VALIDATOR", "mapping plan references an unavailable validator");
+                    ValidationResultHolder validated = validate(validator, transformed,
+                            new Validator.ValidationContext(target, request.targetSchema().locale(), raw, step.options()));
+                    counters.validationsExecuted++;
+                    validatorIds.add(validated.result.validatorId());
+                    if (validated.result.status() == Validator.Status.WARNING) warnings.add(validated.result.code());
+                    if (validated.result.status() == Validator.Status.FAILURE) errors.add(validated.result.code());
+                }
+            }
+            for (String code : warnings) counters.issue(false, code, row, mapping,
+                    transformerIds.isEmpty() ? "" : transformerIds.getLast(),
+                    validatorIds.isEmpty() ? "" : validatorIds.getLast(), raw);
+            for (String code : errors) counters.issue(true, code, row, mapping,
+                    transformerIds.isEmpty() ? "" : transformerIds.getLast(),
+                    validatorIds.isEmpty() ? "" : validatorIds.getLast(), raw);
+            rowWarnings.addAll(warnings); rowErrors.addAll(errors);
+            RowExecutionResult.Status fieldStatus = !errors.isEmpty() ? RowExecutionResult.Status.INVALID
+                    : !warnings.isEmpty() ? RowExecutionResult.Status.VALID_WITH_WARNINGS : RowExecutionResult.Status.VALID;
+            fields.add(new RowExecutionResult.FieldResult(mapping.sourceColumnId(), mapping.targetFieldId(), fieldStatus,
+                    transformerIds, validatorIds, warnings, errors, protect(raw)));
+            if (counters.limitReached()) break;
+        }
+        RowExecutionResult.Status status = !rowErrors.isEmpty()
+                ? request.dryRunOptions().errorPolicy() == DryRunOptions.ErrorPolicy.SKIP_ROW
+                    ? RowExecutionResult.Status.SKIPPED : RowExecutionResult.Status.INVALID
+                : !rowWarnings.isEmpty() ? RowExecutionResult.Status.VALID_WITH_WARNINGS : RowExecutionResult.Status.VALID;
+        return new RowExecutionResult(row.recordNumber(), row.physicalLine(), status, fields, rowWarnings, rowErrors);
+    }
+
+    private static String protect(String raw) { return "<redacted:length=" + (raw == null ? 0 : raw.length()) + ">"; }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ValidationResultHolder validate(Validator<T> validator, Object value,
+            Validator.ValidationContext context) {
+        if (value != null && validator.valueType() != Object.class && !validator.valueType().isInstance(value))
+            throw new EngineException("VALIDATOR_TYPE_MISMATCH", "mapping plan has incompatible validator type");
+        return new ValidationResultHolder(validator.validate((T) value, context));
+    }
+
+    private record ValidationResultHolder(Validator.ValidationResult result) {}
+
+    private static final class DryRunCounters {
+        private final DryRunOptions options;
+        private final Map<String, Long> errorCodes = new LinkedHashMap<>();
+        private final Map<String, Long> warningCodes = new LinkedHashMap<>();
+        private final Map<String, Long> fieldErrors = new LinkedHashMap<>();
+        private final List<DryRunResult.RowIssue> issueSamples = new ArrayList<>();
+        private long rowsProcessed;
+        private long rowsValid;
+        private long rowsValidWithWarnings;
+        private long rowsInvalid;
+        private long rowsSkipped;
+        private long cellsProcessed;
+        private long nonEmptyCells;
+        private long charactersObserved;
+        private long transformationsApplied;
+        private long validationsExecuted;
+        private long manualReviewRequiredCount;
+        private long totalErrorCount;
+        private long totalWarningCount;
+        private boolean terminated;
+        private String terminationCode = "";
+
+        private DryRunCounters(DryRunOptions options) { this.options = options; }
+
+        private void issue(boolean error, String code, Dataset.Row row,
+                MappingPlan.FieldMapping mapping, String transformerId,
+                String validatorId, String raw) {
+            if (error) {
+                totalErrorCount++;
+                mergeBounded(errorCodes, code);
+                mergeBounded(fieldErrors, mapping.targetFieldId());
+            } else {
+                totalWarningCount++;
+                mergeBounded(warningCodes, code);
+            }
+            if (issueSamples.size() < options.maxIssueSamples()) {
+                issueSamples.add(new DryRunResult.RowIssue(row.recordNumber(), row.physicalLine(),
+                        mapping.sourceColumnId(), mapping.targetFieldId(), transformerId,
+                        validatorId, code, issueReason(code), protect(raw)));
+            }
+            if (error && totalErrorCount >= options.maxErrors()) {
+                terminated = true;
+                terminationCode = "MAX_ERRORS_REACHED";
+            }
+        }
+
+        private void mergeBounded(Map<String, Long> target, String code) {
+            if (target.containsKey(code)) target.merge(code, 1L, Long::sum);
+            else if (target.size() < options.maxDistinctIssueCodes()) target.put(code, 1L);
+        }
+
+        private boolean limitReached() { return terminated; }
+
+        private void acceptRow(RowExecutionResult result) {
+            switch (result.status()) {
+                case VALID -> rowsValid++;
+                case VALID_WITH_WARNINGS -> { rowsValidWithWarnings++; manualReviewRequiredCount++; }
+                case INVALID -> { rowsInvalid++; manualReviewRequiredCount++; }
+                case SKIPPED -> { rowsSkipped++; manualReviewRequiredCount++; }
+            }
+            if (!result.errorCodes().isEmpty() && options.errorPolicy() == DryRunOptions.ErrorPolicy.FAIL_FAST) {
+                terminated = true;
+                terminationCode = "FAIL_FAST_DATA_ERROR";
+            }
+        }
+
+        private DryRunResult result(DryRunRequest request, long durationMillis) {
+            MappingPlan plan = request.plan();
+            return new DryRunResult("1.0", ENGINE_VERSION, plan.planId(), plan.sourceId(),
+                    plan.sourceFingerprint(), plan.schemaId(), plan.schemaVersion(),
+                    plan.schemaFingerprint(), plan.configurationFingerprint(), rowsProcessed,
+                    rowsValid, rowsValidWithWarnings, rowsInvalid, rowsSkipped, cellsProcessed,
+                    nonEmptyCells, charactersObserved, plan.mappings().size(),
+                    transformationsApplied, validationsExecuted, manualReviewRequiredCount,
+                    totalErrorCount, totalWarningCount, fieldErrors, errorCodes, warningCodes, issueSamples,
+                    terminated, terminationCode, durationMillis);
+        }
+
+        private static String issueReason(String code) {
+            return switch (code) {
+                case "REQUIRED_VALUE_MISSING" -> "required target field received an empty value";
+                case "INVALID_CPF_FORMAT" -> "value is not in an accepted CPF representation";
+                case "INVALID_CPF_CHECKSUM" -> "CPF modulus-11 checksum is invalid";
+                case "INVALID_PHONE_FORMAT" -> "value is not in an accepted Brazilian phone representation";
+                case "INVALID_CEP_FORMAT" -> "value is not in an accepted CEP representation";
+                case "AMBIGUOUS_DATE" -> "date has more than one plausible interpretation";
+                case "INVALID_DATE" -> "value does not match an explicitly accepted date format";
+                case "AMBIGUOUS_DECIMAL" -> "number separators require an explicit locale";
+                case "INVALID_DECIMAL", "INVALID_INTEGER", "INVALID_LONG" ->
+                    "value cannot be converted to the requested numeric type";
+                case "REGEX_MISMATCH" -> "value does not match the configured regular expression";
+                case "LENGTH_OUT_OF_RANGE" -> "value length is outside the configured range";
+                case "VALUE_NOT_IN_ENUM" -> "value is not in the configured enumeration";
+                case "NUMERIC_OUT_OF_RANGE" -> "numeric value is outside the configured range";
+                case "DATE_OUT_OF_RANGE" -> "date is outside the configured range";
+                default -> "configured transformation or validation reported " + code;
+            };
         }
     }
 
@@ -402,6 +659,12 @@ public final class MappingEngine {
     private static void validateUnit(double value, String name) {
         if (!Double.isFinite(value) || value < 0 || value > 1) throw new IllegalArgumentException(name + " must be in [0,1]");
     }
+    static String schemaFingerprint(TargetSchema schema) { return fingerprint(schemaCanonical(schema)); }
+    private String configurationFingerprint(AnalysisOptions options) {
+        return fingerprint(configCanonical(config) + '|'
+                + new java.util.TreeMap<>(options.readerOptions()) + '|' + options.sampleSeed()
+                + '|' + executionRegistryCanonical);
+    }
     private static String schemaCanonical(TargetSchema schema) {
         var value = new StringBuilder().append(schema.id()).append('|').append(schema.version()).append('|')
                 .append(schema.context()).append('|').append(schema.locale());
@@ -430,6 +693,8 @@ public final class MappingEngine {
     public static final class Builder {
         private final List<DataReader> readers = new ArrayList<>();
         private final List<SemanticDetector> detectors = new ArrayList<>();
+        private final List<ValueTransformer<?, ?>> transformers = new ArrayList<>(BuiltInTransformers.defaults());
+        private final List<Validator<?>> validators = new ArrayList<>(BuiltInValidators.defaults());
         private EngineConfig config = EngineConfig.defaults();
         private HeaderNormalizer normalizer = new HeaderNormalizer(Map.of());
         /** Replaces the ordered format reader set. */
@@ -440,6 +705,14 @@ public final class MappingEngine {
         public Builder configuration(EngineConfig value) { config = Objects.requireNonNull(value); return this; }
         /** Sets the non-destructive header normalizer used by extraction and matching. */
         public Builder normalizer(HeaderNormalizer value) { normalizer = Objects.requireNonNull(value); return this; }
+        /** Replaces the transformer registry. Core transformers are present by default. */
+        public Builder transformers(List<ValueTransformer<?, ?>> value) {
+            transformers.clear(); transformers.addAll(Objects.requireNonNull(value)); return this;
+        }
+        /** Replaces the validator registry. Core validators are present by default. */
+        public Builder validators(List<Validator<?>> value) {
+            validators.clear(); validators.addAll(Objects.requireNonNull(value)); return this;
+        }
         /** Validates composition and builds an engine for sequential reuse. */
         public MappingEngine build() { return new MappingEngine(this); }
     }

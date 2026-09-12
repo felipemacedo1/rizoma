@@ -62,10 +62,26 @@ incrementos posteriores verificados localmente.
 - [x] Volume de 1 milhao sob `-Xmx256m`: 36,46 s, RSS 172.172 KiB na execucao final.
 - [ ] JMH, adiado ate o subscore lexical estabilizar.
 
+## 0.3: transformacao, validacao e dry run
+
+- [x] `MappingPlan` 1.0 explicito, somente com mappings confirmados e ligado a
+  fingerprints de fonte, schema, configuracao e registro de regras.
+- [x] Transformers tipados JDK-only e canonicalizadores CPF/telefone/CEP pt-BR.
+- [x] Datas e decimais conservadores com locale/formato explicito; zeros de
+  identificadores TEXT preservados.
+- [x] Validators required, regex, length, enum, CPF checksum e ranges.
+- [x] Pipeline de linha com `VALID`, `VALID_WITH_WARNINGS`, `INVALID` e `SKIPPED`.
+- [x] Policies `FAIL_FAST`, `SKIP_ROW`, `COLLECT_ERRORS` e colecoes limitadas.
+- [x] `DryRunResult` 1.0 com contagens reais, motivos e amostras protegidas.
+- [x] CLI `plan`/`dry-run` e API Java sem porta de destino.
+- [x] Regressao do corpus 0.2 e gates de cobertura preservados.
+- [x] Java 21/25, quickstart e volume 1M verificados e registrados.
+- [x] Consolidar o milestone em commit/push quando solicitado.
+
 ## Versoes seguintes
 
-- **0.2:** implementado localmente; aguarda apenas consolidacao do commit.
-- **0.3:** transformacao, validacao, dry run e sink seguro de referencia.
+- **0.2:** implementado, verificado e persistido no remoto.
+- **0.3:** transformacao, validacao, plano ligado a fingerprints e dry run sem sink.
 - **0.4:** feedback e knowledge base.
 - **0.5:** matching global bipartido opt-in.
 - **0.6:** SPI documentada e novas fontes orientadas por demanda.

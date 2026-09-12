@@ -311,6 +311,264 @@ class MappingEngineTest {
         assertEquals("SOURCE_CHANGED", error.code());
     }
 
+    @Test void explicitPlanDryRunStreamsCountsMasksAndNeverNeedsADestination() {
+        var closed = new AtomicBoolean();
+        var reader = new MemoryReader(List.of("Name", "Quantity"), List.of(
+                List.of("Synthetic One", "2"), List.of("", "not-a-number")), closed);
+        var schema = new TargetSchema("items", "1", "", "en-US", List.of(
+                new TargetField("item.name", "Name", List.of(), PhysicalType.TEXT, Set.of(), true),
+                new TargetField("item.quantity", "Quantity", List.of(), PhysicalType.INTEGER, Set.of(), true)));
+        var engine = MappingEngine.builder().readers(List.of(reader)).build();
+        var source = new MemorySource();
+        AnalysisResult analysis = engine.analyze(new AnalysisRequest(source, schema, null));
+        MappingPlan defaults = new MappingPlanner().create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "item.name", "test confirmation"),
+                new MappingPlanner.Selection("c1", "item.quantity", "test confirmation")));
+
+        DryRunResult result = engine.dryRun(new DryRunRequest(source, schema, defaults,
+                AnalysisOptions.defaults(), new DryRunOptions(DryRunOptions.ErrorPolicy.COLLECT_ERRORS, 10, 2)));
+
+        assertTrue(closed.get());
+        assertEquals(2, result.rowsProcessed());
+        assertEquals(1, result.rowsValid());
+        assertEquals(1, result.rowsInvalid());
+        assertEquals(4, result.cellsProcessed());
+        assertEquals(3, result.nonEmptyCells());
+        assertEquals(2, result.fieldsMapped());
+        assertEquals(2, result.transformationsApplied());
+        assertEquals(3, result.validationsExecuted());
+        assertEquals(2, result.totalErrorCount());
+        assertEquals(2, result.issueSamples().size());
+        assertTrue(result.issueSamples().stream().allMatch(issue -> issue.protectedValue().startsWith("<redacted:length=")));
+        assertTrue(result.issueSamples().stream().noneMatch(issue -> issue.toString().contains("not-a-number")));
+        assertFalse(result.terminatedEarly());
+    }
+
+    @Test void dryRunRejectsChangedSourceAndBoundsErrorsWithControlledTermination() {
+        var closed = new AtomicBoolean();
+        var reader = new MemoryReader(List.of("Required"), List.of(List.of(""), List.of("")), closed);
+        var schema = new TargetSchema("required", "1", "", "", List.of(
+                new TargetField("required.value", "Required", List.of(), PhysicalType.TEXT, Set.of(), true)));
+        var engine = MappingEngine.builder().readers(List.of(reader)).build();
+        var source = new MemorySource();
+        var analysis = engine.analyze(new AnalysisRequest(source, schema, null));
+        var plan = new MappingPlanner().create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "required.value", "test confirmation")));
+
+        var changed = new MemorySource() { @Override public String sha256() { return "different"; } };
+        assertEquals("INVALIDATE_PLAN", assertThrows(EngineException.class, () -> engine.dryRun(
+                new DryRunRequest(changed, schema, plan, null, null))).code());
+
+        closed.set(false);
+        DryRunResult bounded = engine.dryRun(new DryRunRequest(source, schema, plan, null,
+                new DryRunOptions(DryRunOptions.ErrorPolicy.COLLECT_ERRORS, 1, 1)));
+        assertTrue(bounded.terminatedEarly());
+        assertEquals("MAX_ERRORS_REACHED", bounded.terminationCode());
+        assertEquals(1, bounded.rowsProcessed());
+        assertEquals(1, bounded.issueSamples().size());
+        assertEquals(1, bounded.totalErrorCount());
+        assertTrue(closed.get(), "maxErrors termination must close the dataset");
+    }
+
+    @Test void mappingPlannerRequiresExplicitValidSelections() {
+        var reader = new MemoryReader(List.of("Name"), List.of(List.of("Synthetic")), new AtomicBoolean());
+        var schema = new TargetSchema("items", "1", "", "", List.of(
+                new TargetField("item.name", "Name", List.of(), PhysicalType.TEXT, Set.of(), true)));
+        var analysis = MappingEngine.builder().readers(List.of(reader)).build()
+                .analyze(new AnalysisRequest(new MemorySource(), schema, null));
+        var planner = new MappingPlanner();
+        assertThrows(IllegalArgumentException.class, () -> planner.create(analysis, schema, List.of(
+                new MappingPlanner.Selection("missing", "item.name", "test"))));
+        assertThrows(IllegalArgumentException.class, () -> planner.create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "missing", "test"))));
+        assertThrows(IllegalArgumentException.class, () -> planner.create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "item.name", "first"),
+                new MappingPlanner.Selection("c0", "item.name", "second"))));
+
+        var changedSchema = new TargetSchema("different", "1", "", "", schema.fields());
+        assertEquals("PLAN_SCHEMA_MISMATCH", assertThrows(EngineException.class,
+                () -> planner.create(analysis, changedSchema, List.of())).code());
+        var oldAnalysis = new AnalysisResult(analysis.formatVersion(), "0.2.0-SNAPSHOT", analysis.calibration(),
+                analysis.sourceId(), analysis.sourceFingerprint(), analysis.schemaId(), analysis.schemaVersion(),
+                analysis.schemaFingerprint(), analysis.configurationVersion(), analysis.configurationFingerprint(),
+                analysis.structure(), analysis.rowsProcessed(), analysis.profiles(), analysis.candidatesByColumn(),
+                analysis.prunedCandidatesByColumn(), analysis.decisionsByColumn(), analysis.unmatchedColumns(),
+                analysis.conflicts(), analysis.warnings(), analysis.errors());
+        assertEquals("PLAN_ENGINE_MISMATCH", assertThrows(EngineException.class,
+                () -> planner.create(oldAnalysis, schema, List.of())).code());
+
+        var base = planner.create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "item.name", "test")));
+        var configured = planner.configure(base, "c0", List.of(new MappingPlan.Step("core:string-normalize")),
+                List.of(new MappingPlan.Step("core:length", "1", Map.of("max", "20"))), "reviewed steps");
+        assertNotEquals(base.planId(), configured.planId());
+        assertEquals("core:length", configured.mappings().getFirst().validations().getFirst().id());
+        assertEquals(configured, planner.configure(base, "c0",
+                List.of(new MappingPlan.Step("core:string-normalize")),
+                List.of(new MappingPlan.Step("core:length", "1", Map.of("max", "20"))), "reviewed steps"));
+        assertThrows(IllegalArgumentException.class, () -> planner.configure(base, "missing", List.of(), List.of(), "test"));
+    }
+
+    @Test void dryRunErrorPoliciesDistinguishInvalidSkippedAndFailFast() {
+        var reader = new MemoryReader(List.of("Required"), List.of(List.of(""), List.of("")), new AtomicBoolean());
+        var schema = new TargetSchema("required", "1", "", "", List.of(
+                new TargetField("required.value", "Required", List.of(), PhysicalType.TEXT, Set.of(), true)));
+        var engine = MappingEngine.builder().readers(List.of(reader)).build();
+        var source = new MemorySource();
+        var analysis = engine.analyze(new AnalysisRequest(source, schema, null));
+        var plan = new MappingPlanner().create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "required.value", "test")));
+
+        var skipped = engine.dryRun(new DryRunRequest(source, schema, plan, null,
+                new DryRunOptions(DryRunOptions.ErrorPolicy.SKIP_ROW, 10, 0)));
+        assertEquals(2, skipped.rowsSkipped());
+        assertEquals(0, skipped.rowsInvalid());
+        assertEquals(2, skipped.totalErrorCount());
+        assertTrue(skipped.issueSamples().isEmpty());
+        assertFalse(skipped.errorCodes().isEmpty());
+
+        var failFast = engine.dryRun(new DryRunRequest(source, schema, plan, null,
+                new DryRunOptions(DryRunOptions.ErrorPolicy.FAIL_FAST, 10, 1)));
+        assertEquals(1, failFast.rowsProcessed());
+        assertEquals(1, failFast.rowsInvalid());
+        assertTrue(failFast.terminatedEarly());
+        assertEquals("FAIL_FAST_DATA_ERROR", failFast.terminationCode());
+    }
+
+    @Test void dryRunRejectsConfigurationSchemaAndIncompletePlanMismatches() {
+        var reader = new MemoryReader(List.of("Name"), List.of(List.of("Synthetic")), new AtomicBoolean());
+        var schema = new TargetSchema("items", "1", "", "", List.of(
+                new TargetField("item.name", "Name", List.of(), PhysicalType.TEXT, Set.of(), true)));
+        var source = new MemorySource();
+        var engine = MappingEngine.builder().readers(List.of(reader)).build();
+        var analysis = engine.analyze(new AnalysisRequest(source, schema, null));
+        var plan = new MappingPlanner().create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "item.name", "test")));
+
+        var differentOptions = new AnalysisOptions(Map.of("header", "first"), 42);
+        assertEquals("REQUIRE_REANALYSIS", assertThrows(EngineException.class, () -> engine.dryRun(
+                new DryRunRequest(source, schema, plan, differentOptions, null))).code());
+        var otherSchema = new TargetSchema("items", "2", "", "", schema.fields());
+        assertEquals("REQUIRE_REANALYSIS", assertThrows(EngineException.class, () -> engine.dryRun(
+                new DryRunRequest(source, otherSchema, plan, null, null))).code());
+
+        var incomplete = new MappingPlanner().create(analysis, schema, List.of());
+        assertEquals("INCOMPLETE_PLAN", assertThrows(EngineException.class, () -> engine.dryRun(
+                new DryRunRequest(source, schema, incomplete, null, null))).code());
+    }
+
+    @Test void plannerDerivesOnlyImplementedStepsForEverySupportedTargetKind() {
+        var semantics = List.of("br:cpf", "br:phone", "br:cep", "core:email", "", "", "", "");
+        var physical = List.of(PhysicalType.TEXT, PhysicalType.TEXT, PhysicalType.TEXT, PhysicalType.TEXT,
+                PhysicalType.INTEGER, PhysicalType.DECIMAL, PhysicalType.DATE, PhysicalType.BOOLEAN);
+        var fields = new ArrayList<TargetField>();
+        var headers = new ArrayList<String>();
+        var values = new ArrayList<String>();
+        for (int index = 0; index < physical.size(); index++) {
+            headers.add("Field " + index); values.add("value");
+            Set<SemanticType> accepted = semantics.get(index).isEmpty()
+                    ? Set.of() : Set.of(new SemanticType(semantics.get(index)));
+            fields.add(new TargetField("target." + index, "Field " + index, List.of(), physical.get(index),
+                    accepted, true, false));
+        }
+        var schema = new TargetSchema("all-types", "1", "", "pt-BR", fields);
+        var reader = new MemoryReader(headers, List.of(values), new AtomicBoolean());
+        var analysis = MappingEngine.builder().readers(List.of(reader)).build()
+                .analyze(new AnalysisRequest(new MemorySource(), schema, null));
+        var selections = new ArrayList<MappingPlanner.Selection>();
+        for (int index = 0; index < fields.size(); index++)
+            selections.add(new MappingPlanner.Selection("c" + index, fields.get(index).id(), "test"));
+        var plan = new MappingPlanner().create(analysis, schema, selections);
+
+        assertEquals("br:cpf-canonical", plan.mappings().get(0).transformations().getFirst().id());
+        assertEquals("br:cpf-checksum", plan.mappings().get(0).validations().get(1).id());
+        assertEquals("br:phone-canonical", plan.mappings().get(1).transformations().getFirst().id());
+        assertEquals("br:cep-canonical", plan.mappings().get(2).transformations().getFirst().id());
+        assertEquals("core:regex", plan.mappings().get(3).validations().get(1).id());
+        assertEquals("core:long", plan.mappings().get(4).transformations().getFirst().id());
+        assertEquals("pt-BR", plan.mappings().get(5).transformations().getFirst().options().get("locale"));
+        assertEquals("uuuu-MM-dd|dd/MM/uuuu", plan.mappings().get(6).transformations().getFirst().options().get("formats"));
+        assertEquals("core:boolean", plan.mappings().get(7).transformations().getFirst().id());
+        assertTrue(plan.unmappedSourceColumns().isEmpty());
+        assertEquals(8, plan.confirmedSourceColumns().size());
+    }
+
+    @Test void dryRunAggregatesDifferentIssueKindsAndWarningsWithoutValues() {
+        var headers = List.of("Normalize", "Regex", "Length", "Enum", "Number", "Date");
+        var row = List.of("  SECRET  ", "abc", "abcd", "other", "11", "2026-01-01");
+        var fields = List.of(
+                new TargetField("normalize", "Normalize", List.of(), PhysicalType.TEXT, Set.of(), false, false),
+                new TargetField("regex", "Regex", List.of(), PhysicalType.TEXT, Set.of(), false, false),
+                new TargetField("length", "Length", List.of(), PhysicalType.TEXT, Set.of(), false, false),
+                new TargetField("enum", "Enum", List.of(), PhysicalType.TEXT, Set.of(), false, false),
+                new TargetField("number", "Number", List.of(), PhysicalType.DECIMAL, Set.of(), false, false),
+                new TargetField("date", "Date", List.of(), PhysicalType.DATE, Set.of(), false, false));
+        var schema = new TargetSchema("issues", "1", "", "en-US", fields);
+        var source = new MemorySource();
+        var engine = MappingEngine.builder().readers(List.of(
+                new MemoryReader(headers, List.of(row), new AtomicBoolean()))).build();
+        var analysis = engine.analyze(new AnalysisRequest(source, schema, null));
+        var base = new MappingPlanner().create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "normalize", "test"),
+                new MappingPlanner.Selection("c1", "regex", "test"),
+                new MappingPlanner.Selection("c2", "length", "test"),
+                new MappingPlanner.Selection("c3", "enum", "test"),
+                new MappingPlanner.Selection("c4", "number", "test"),
+                new MappingPlanner.Selection("c5", "date", "test")));
+        var mappings = List.of(
+                configured(base, 0, List.of(new MappingPlan.Step("core:string-normalize")), List.of()),
+                configured(base, 1, List.of(), List.of(new MappingPlan.Step("core:regex", "1", Map.of("pattern", "\\d+")))),
+                configured(base, 2, List.of(), List.of(new MappingPlan.Step("core:length", "1", Map.of("max", "3")))),
+                configured(base, 3, List.of(), List.of(new MappingPlan.Step("core:enum", "1", Map.of("values", "new|done")))),
+                configured(base, 4, List.of(new MappingPlan.Step("core:big-decimal", "1", Map.of("locale", "en-US"))),
+                        List.of(new MappingPlan.Step("core:numeric-range", "1", Map.of("max", "10")))),
+                configured(base, 5, List.of(new MappingPlan.Step("core:local-date")),
+                        List.of(new MappingPlan.Step("core:date-range", "1", Map.of("min", "2026-02-01")))));
+        var plan = new MappingPlan(base.formatVersion(), base.planId(), base.engineVersion(), base.sourceId(),
+                base.sourceFingerprint(), base.schemaId(), base.schemaVersion(), base.schemaFingerprint(),
+                base.configurationVersion(), base.configurationFingerprint(), mappings, List.of(),
+                base.confirmedSourceColumns());
+
+        var result = engine.dryRun(new DryRunRequest(source, schema, plan, null,
+                new DryRunOptions(DryRunOptions.ErrorPolicy.COLLECT_ERRORS, 20, 10, 2)));
+        assertEquals(1, result.rowsInvalid());
+        assertEquals(5, result.totalErrorCount());
+        assertEquals(1, result.totalWarningCount());
+        assertEquals(2, result.fieldErrors().size());
+        assertEquals(2, result.errorCodes().size());
+        assertTrue(result.warningCodes().containsKey("STRING_NORMALIZED"));
+        assertTrue(result.issueSamples().stream().allMatch(issue -> !issue.protectedValue().contains("SECRET")));
+    }
+
+    @Test void transformationWarningProducesValidWithWarningsUnlessAnotherRuleFails() {
+        var reader = new MemoryReader(List.of("Name"), List.of(List.of("  Synthetic   Name  ")), new AtomicBoolean());
+        var schema = new TargetSchema("warning", "1", "", "", List.of(
+                new TargetField("name", "Name", List.of(), PhysicalType.TEXT, Set.of(), false, false)));
+        var source = new MemorySource();
+        var engine = MappingEngine.builder().readers(List.of(reader)).build();
+        var analysis = engine.analyze(new AnalysisRequest(source, schema, null));
+        var base = new MappingPlanner().create(analysis, schema, List.of(
+                new MappingPlanner.Selection("c0", "name", "test")));
+        var mapping = new MappingPlan.FieldMapping("c0", "name",
+                List.of(new MappingPlan.Step("core:string-normalize")), List.of(), true, "test");
+        var plan = new MappingPlan(base.formatVersion(), base.planId(), base.engineVersion(), base.sourceId(),
+                base.sourceFingerprint(), base.schemaId(), base.schemaVersion(), base.schemaFingerprint(),
+                base.configurationVersion(), base.configurationFingerprint(), List.of(mapping), List.of(), List.of("c0"));
+
+        var result = engine.dryRun(new DryRunRequest(source, schema, plan, null, null));
+        assertEquals(1, result.rowsValidWithWarnings());
+        assertEquals(0, result.rowsInvalid());
+        assertEquals(1, result.totalWarningCount());
+        assertEquals(1, result.manualReviewRequiredCount());
+    }
+
+    private static MappingPlan.FieldMapping configured(MappingPlan base, int index,
+            List<MappingPlan.Step> transformations, List<MappingPlan.Step> validations) {
+        var mapping = base.mappings().get(index);
+        return new MappingPlan.FieldMapping(mapping.sourceColumnId(), mapping.targetFieldId(), transformations,
+                validations, true, "explicit test configuration");
+    }
+
     private static EngineConfig config(EngineConfig defaults, EngineLimits limits, boolean autoMap, double minCoverage) {
         return new EngineConfig("test", limits, defaults.weights(), 2, .9, .7, .5, .1, minCoverage, autoMap);
     }

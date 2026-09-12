@@ -75,4 +75,36 @@ class ContractsTest {
         assertEquals(1, email.validMatches());
         assertFalse(email.strongIdentity());
     }
+
+    @Test void everyResourceAndDryRunLimitRejectsItsInvalidBoundary() {
+        Duration duration = Duration.ofSeconds(1);
+        List<org.junit.jupiter.api.function.Executable> invalid = List.of(
+                () -> limits(0, 1, 1, 1, 1, 0, 1, 1, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 0, 1, 1, 1, 0, 1, 1, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 0, 1, 1, 0, 1, 1, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 1, 0, 1, 0, 1, 1, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 1, 1, 0, 0, 1, 1, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 1, 1, 1, -1, 1, 1, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 1, 1, 1, 0, 0, 1, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 1, 1, 1, 0, 1, 0, 1, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 1, 1, 1, 0, 1, 1, 0, duration, 1, 1, 1, 1),
+                () -> limits(1, 1, 1, 1, 1, 0, 1, 1, 1, duration, 0, 1, 1, 1),
+                () -> limits(1, 1, 1, 1, 1, 0, 1, 1, 1, duration, 1, 0, 1, 1),
+                () -> limits(1, 1, 1, 1, 1, 0, 1, 1, 1, duration, 1, 1, 0, 1),
+                () -> limits(1, 1, 1, 1, 1, 0, 1, 1, 1, duration, 1, 1, 1, 0));
+        invalid.forEach(executable -> assertThrows(IllegalArgumentException.class, executable));
+        assertThrows(NullPointerException.class, () -> limits(1, 1, 1, 1, 1, 0,
+                1, 1, 1, null, 1, 1, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new DryRunOptions(null, 0, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new DryRunOptions(null, 1, -1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new DryRunOptions(null, 1, 1, 0));
+        assertEquals(DryRunOptions.ErrorPolicy.COLLECT_ERRORS, new DryRunOptions(null, 1, 0, 1).errorPolicy());
+    }
+
+    private static EngineLimits limits(long bytes, long records, int columns, int fieldChars,
+            int headerChars, int samples, int candidates, int warnings, int errors,
+            Duration duration, int distinct, int frequent, int anomalies, int pruned) {
+        return new EngineLimits(bytes, records, columns, fieldChars, headerChars, samples,
+                candidates, warnings, errors, duration, distinct, frequent, anomalies, pruned);
+    }
 }

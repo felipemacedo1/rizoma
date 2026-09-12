@@ -1,8 +1,9 @@
 # Rizoma
 
-Rizoma e um motor Java de ingestao, profiling e sugestao de mapeamento de dados.
-A implementacao atual recebe CSV, XLS ou XLSX e um esquema conhecido e produz
-um relatorio explicavel, sem escrever em qualquer sistema de destino.
+Rizoma e um motor Java de ingestao, profiling, mapeamento e preparacao segura de
+dados. A implementacao atual recebe CSV, XLS ou XLSX e um esquema conhecido,
+produz sugestoes explicaveis e executa transformacao/validacao em dry run, sem
+escrever em qualquer sistema de destino.
 
 ## O que funciona hoje
 
@@ -27,6 +28,13 @@ um relatorio explicavel, sem escrever em qualquer sistema de destino.
 - score composto, cobertura, margem, contradicoes, ranking e abstencao;
 - API Java sem framework e CLI `analyze`/`explain` com JSON estrito;
 - corpus sintetico com avaliacao top-1/top-3, abstencao e matriz semantica.
+- `MappingPlan` ligado aos fingerprints de fonte, schema e configuracao;
+- transformers tipados para String, Integer, Long, BigDecimal, LocalDate,
+  Boolean, CPF, telefone e CEP;
+- validators required, regex, length, enum, ranges numerico/data e CPF checksum;
+- dry run streaming com policies, contagens reais e erros/warnings limitados e
+  mascarados;
+- CLI `plan` e `dry-run`, reutilizando a mesma API Java sem porta de destino.
 
 O score e um indicador heuristico, nao uma probabilidade. A calibracao e
 `UNCALIBRATED` e `AUTO_MAP` vem desligado por padrao no proprio core. Uma
@@ -49,14 +57,47 @@ de branches.
 
 ```bash
 ./mvnw package
-java -jar rizoma-cli/target/rizoma-cli-0.2.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
   analyze examples/clientes.csv \
   --schema examples/customer.schema.json \
   --out target/report.json
 
-java -jar rizoma-cli/target/rizoma-cli-0.2.0-SNAPSHOT-all.jar \
+java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
   explain target/report.json --column "CPF Cliente"
 ```
+
+## Quickstart do dry run
+
+O plano exige confirmacao explicita por ID posicional; ele nunca converte uma
+sugestao em autorizacao automaticamente:
+
+```bash
+java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+  analyze examples/dry-run-customers.csv \
+  --schema examples/dry-run-customer.schema.json \
+  --out target/dry-analysis.json --delimiter semicolon --header first
+
+java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+  plan target/dry-analysis.json \
+  --schema examples/dry-run-customer.schema.json \
+  --out target/mapping.json \
+  --map c0=customer.document --map c1=customer.email \
+  --map c2=customer.phone --map c3=customer.postalCode \
+  --map c4=customer.birthDate --map c5=customer.amount \
+  --map c6=customer.active --map c7=customer.code
+
+java -jar rizoma-cli/target/rizoma-cli-0.3.0-SNAPSHOT-all.jar \
+  dry-run examples/dry-run-customers.csv \
+  --schema examples/dry-run-customer.schema.json \
+  --mapping target/mapping.json --out target/dry-run.json \
+  --delimiter semicolon --header first
+```
+
+`analyze` entende estrutura/conteudo e ranqueia candidatos. `plan` registra as
+escolhas confirmadas e os steps derivados. `dry-run` reabre a mesma fonte,
+verifica fingerprints, transforma e valida; nao recebe sink e nao importa nada.
+Policies disponiveis: `COLLECT_ERRORS` (default), `SKIP_ROW` e `FAIL_FAST`, com
+`--max-errors`, `--max-issue-samples` e `--max-issue-codes`.
 
 Para headers duplicados, `--column` retorna erro em vez de escolher a primeira
 ocorrencia. Use, por exemplo, `--column-id c1`. `analyze` reserva stdout para
@@ -73,10 +114,16 @@ os modulos podem ser usados diretamente no reactor Maven:
 ```java
 List<SemanticDetector> detectors = new ArrayList<>(CoreSemanticDetectors.defaults());
 detectors.addAll(PtBrDetectors.defaults());
+List<ValueTransformer<?, ?>> transformers = new ArrayList<>(BuiltInTransformers.defaults());
+transformers.addAll(PtBrExecutionRules.transformers());
+List<Validator<?>> validators = new ArrayList<>(BuiltInValidators.defaults());
+validators.addAll(PtBrExecutionRules.validators());
 
 MappingEngine engine = MappingEngine.builder()
     .readers(List.of(new ExcelDataReader(), new CsvDataReader()))
     .semanticDetectors(detectors)
+    .transformers(transformers)
+    .validators(validators)
     .normalizer(PtBrHeaderRules.normalizer())
     .configuration(EngineConfig.defaults())
     .build();
@@ -86,19 +133,27 @@ TargetSchema schema = new TargetSchema("customer", "1", "customer", "pt-BR", Lis
         PhysicalType.TEXT, Set.of(new SemanticType("br:cpf")), true)
 ));
 
-AnalysisResult result = engine.analyze(new AnalysisRequest(
-    new PathTabularSource(Path.of("clientes.xlsx")), schema,
-    new AnalysisOptions(Map.of("sheet", "Clientes", "formula", "cached"), 42L)));
+PathTabularSource source = new PathTabularSource(Path.of("examples/clientes.csv"));
+AnalysisOptions options = new AnalysisOptions(Map.of("header", "detect"), 42L);
+AnalysisResult result = engine.analyze(new AnalysisRequest(source, schema, options));
 
-var best = result.candidatesByColumn().get("c0").getFirst();
+var best = result.candidatesByColumn().get("c1").getFirst();
 best.components().forEach(component ->
     System.out.println(component.id() + ": " + component.evidence()));
+
+MappingPlan plan = new MappingPlanner().create(result, schema, List.of(
+    new MappingPlanner.Selection("c1", "customer.document", "confirmed by caller")
+));
+DryRunResult dryRun = engine.dryRun(new DryRunRequest(
+    source, schema, plan, options, DryRunOptions.defaults()));
+System.out.println(dryRun.rowsValid() + " valid rows");
 ```
 
 Fonte, esquema e opcoes pertencem a `AnalysisRequest`; o engine nao guarda
 estado de uma execucao. A composicao e imutavel e suporta reutilizacao
-sequencial. Uso concorrente nao e prometido porque readers e detectores
-injetados podem possuir restricoes proprias.
+sequencial. Uso concorrente nao e prometido porque componentes injetados podem
+possuir restricoes proprias. `dryRun` nao aceita destino; escrita real nao foi
+implementada.
 
 ## Como ler o resultado
 
@@ -112,8 +167,10 @@ injetados podem possuir restricoes proprias.
   `AUTO_MAP` desligado;
 - componentes indisponiveis: valor `null`, contribuicao zero e motivo explicito.
 
-O formato do esquema e do relatorio esta em
-[docs/contracts/JSON_CONTRACTS_0.2.md](docs/contracts/JSON_CONTRACTS_0.2.md).
+O formato do esquema e do relatorio de analise esta em
+[docs/contracts/JSON_CONTRACTS_0.2.md](docs/contracts/JSON_CONTRACTS_0.2.md); os
+contratos experimentais de plano/dry run estao em
+[docs/contracts/JSON_CONTRACTS_0.3.md](docs/contracts/JSON_CONTRACTS_0.3.md).
 Relatorios 1.2 sao produzidos atualmente; o comando `explain` continua lendo
 relatorios 1.0 e 1.1 para compatibilidade.
 
@@ -138,7 +195,7 @@ generalizacao para dados externos.
 
 ## Limites e seguranca
 
-Padroes: 100 MiB, 10 milhoes de registros, 1.000 colunas, 1 milhao de
+Padroes de analise: 100 MiB, 10 milhoes de registros, 1.000 colunas, 1 milhao de
 caracteres por campo, 10.000 por header, 20 amostras protegidas, top-3
 candidatos, 100 avisos, 100 erros seguros e 10 minutos. Todos sao configuraveis
 pela API; falhas estruturais sao fail-fast no 0.1a, portanto o array de erros
@@ -174,11 +231,19 @@ tipo semantico nao foi reconhecido. O motor nao usa rede, nao altera a fonte e
 compara o SHA-256 antes e depois da leitura para detectar mudanca durante a
 analise.
 
+No dry run, o default coleta no maximo 1.000 erros antes de encerrar, retem 100
+exemplos protegidos e no maximo 256 codigos/campos distintos. Totais processados
+permanecem exatos ate eventual parada controlada. O relatorio nao contem valor
+original nem transformado. Datas com barra sem locale/formato confiavel e
+decimais com separadores sem locale falham como ambiguos; identificadores TEXT
+com zeros iniciais nao sao convertidos.
+
 ## Limitacoes atuais
 
-CNPJ completo, CEP semantico, quantis/outliers robustos, transformacao,
-validacao de importacao, dry run, destino, feedback persistente, matching
-global, plugins dinamicos, ML e LLM nao estao implementados. Linhas CSV
+CNPJ completo, detector semantico de CEP, quantis/outliers robustos, unique,
+foreign key, escrita em destino, feedback persistente, matching global, plugins
+dinamicos, ML e LLM nao estao implementados. Dry run valida somente regras
+locais configuradas; nao declara dados prontos para producao. Linhas CSV
 irregulares continuam sendo erro estrutural fail-fast seguro, nao resultado
 parcial. O arquivo de 1 milhao de linhas nao e versionado; execute
 `scripts/volume-smoke.sh` para gera-lo em streaming e valida-lo com `-Xmx256m`.
@@ -188,9 +253,13 @@ do POI ainda ocupa memoria e fica protegida indiretamente pelo limite expandido
 por entrada. Celulas mescladas nao sao propagadas: somente a ancora possui valor.
 O XLS legado nao e streaming. Valores `cached` de formula podem estar obsoletos,
 pois o Rizoma deliberadamente nao recalcula workbooks. Os artefatos estao em
-`0.2.0-SNAPSHOT` e ainda nao foram publicados em registry ou release. JMH foi
+`0.3.0-SNAPSHOT` e ainda nao foram publicados em registry ou release. JMH foi
 adiado ate o subscore lexical estabilizar; o custo atual e acompanhado pelo
 teste end-to-end de volume.
+
+Planos e regexes customizadas sao configuracao confiavel no 0.3. `planId` nao e
+assinatura digital, e uma regex Java patologica nao possui timeout isolado
+dentro de uma linha.
 
 ## Fixtures e dados
 
@@ -210,6 +279,7 @@ amostras publicas sao mascaradas mesmo quando o tipo semantico e desconhecido.
 
 - [Especificacao tecnica](docs/architecture/TECHNICAL_SPECIFICATION.md)
 - [Contrato JSON 0.2](docs/contracts/JSON_CONTRACTS_0.2.md)
+- [Contratos de plano e dry run 0.3](docs/contracts/JSON_CONTRACTS_0.3.md)
 - [Corpus e metricas 0.2](docs/testing/CORPUS_0.2.md)
 - [Roadmap](docs/roadmap.md)
 - [Estado atual](docs/memory-bank/CURRENT.md)

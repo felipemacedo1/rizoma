@@ -5,15 +5,25 @@ import io.github.rizoma.core.AnalysisOptions;
 import io.github.rizoma.core.AnalysisRequest;
 import io.github.rizoma.core.AnalysisResult;
 import io.github.rizoma.core.CoreSemanticDetectors;
+import io.github.rizoma.core.BuiltInTransformers;
+import io.github.rizoma.core.BuiltInValidators;
+import io.github.rizoma.core.DryRunOptions;
+import io.github.rizoma.core.DryRunRequest;
+import io.github.rizoma.core.DryRunResult;
 import io.github.rizoma.core.EngineConfig;
 import io.github.rizoma.core.EngineException;
 import io.github.rizoma.core.MappingEngine;
+import io.github.rizoma.core.MappingPlan;
+import io.github.rizoma.core.MappingPlanner;
 import io.github.rizoma.core.PathTabularSource;
 import io.github.rizoma.core.SemanticDetector;
+import io.github.rizoma.core.Validator;
+import io.github.rizoma.core.ValueTransformer;
 import io.github.rizoma.csv.CsvDataReader;
 import io.github.rizoma.excel.ExcelDataReader;
 import io.github.rizoma.ptbr.PtBrDetectors;
 import io.github.rizoma.ptbr.PtBrHeaderRules;
+import io.github.rizoma.ptbr.PtBrExecutionRules;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
@@ -32,9 +42,10 @@ import picocli.CommandLine.Spec;
 import picocli.CommandLine.Model.CommandSpec;
 
 /** Command-line adapter for Rizoma analysis reports. */
-@Command(name = "rizoma", mixinStandardHelpOptions = true, version = "rizoma 0.2.0-SNAPSHOT",
-        description = "Explainable CSV/XLS/XLSX-to-schema analysis.",
-        subcommands = {RizomaCli.Analyze.class, RizomaCli.Explain.class})
+@Command(name = "rizoma", mixinStandardHelpOptions = true, version = "rizoma 0.3.0-SNAPSHOT",
+        description = "Explainable CSV/XLS/XLSX analysis and read-only dry runs.",
+        subcommands = {RizomaCli.Analyze.class, RizomaCli.Explain.class,
+                RizomaCli.Plan.class, RizomaCli.DryRun.class})
 public final class RizomaCli implements Runnable {
     /** Successful execution. */
     public static final int OK = 0;
@@ -81,12 +92,84 @@ public final class RizomaCli implements Runnable {
     private static MappingEngine engine() {
         List<SemanticDetector> detectors = new ArrayList<>(CoreSemanticDetectors.defaults());
         detectors.addAll(PtBrDetectors.defaults());
+        List<ValueTransformer<?, ?>> transformers = new ArrayList<>(BuiltInTransformers.defaults());
+        transformers.addAll(PtBrExecutionRules.transformers());
+        List<Validator<?>> validators = new ArrayList<>(BuiltInValidators.defaults());
+        validators.addAll(PtBrExecutionRules.validators());
         return MappingEngine.builder()
                 .readers(List.of(new ExcelDataReader(), new CsvDataReader()))
                 .semanticDetectors(detectors)
+                .transformers(transformers)
+                .validators(validators)
                 .normalizer(PtBrHeaderRules.normalizer())
                 .configuration(EngineConfig.defaults())
                 .build();
+    }
+
+    @Command(name = "plan", mixinStandardHelpOptions = true,
+            description = "Create a source-bound mapping plan from explicit mapping confirmations.")
+    static final class Plan implements Callable<Integer> {
+        @Parameters(index = "0", description = "Analysis report JSON path") Path report;
+        @Option(names = "--schema", required = true, description = "Target schema JSON path") Path schema;
+        @Option(names = "--map", required = true, description = "Confirmed sourceId=targetFieldId; repeat for each mapping")
+        List<String> mappings;
+        @Option(names = "--out", required = true, description = "Mapping plan JSON path") Path output;
+
+        @Override public Integer call() throws Exception {
+            requireRegularFile(report, "report");
+            requireRegularFile(schema, "schema");
+            if (sameFileOrPath(report, output) || sameFileOrPath(schema, output))
+                throw new IllegalArgumentException("--out must not overwrite the report or schema");
+            AnalysisResult analysis = Explain.readReport(report);
+            var selections = mappings.stream().map(Plan::selection).toList();
+            MappingPlan plan = new MappingPlanner().create(analysis, JsonSupport.readSchema(schema), selections);
+            writeAtomically(output, plan);
+            return OK;
+        }
+
+        private static MappingPlanner.Selection selection(String value) {
+            int separator = value.indexOf('=');
+            if (separator <= 0 || separator == value.length() - 1)
+                throw new IllegalArgumentException("--map must use sourceId=targetFieldId");
+            return new MappingPlanner.Selection(value.substring(0, separator), value.substring(separator + 1),
+                    "explicit CLI confirmation");
+        }
+    }
+
+    @Command(name = "dry-run", mixinStandardHelpOptions = true,
+            description = "Transform and validate a source through a bound plan without a destination sink.")
+    static final class DryRun implements Callable<Integer> {
+        @Parameters(index = "0", description = "Input CSV, XLS or XLSX path") Path source;
+        @Option(names = "--schema", required = true, description = "Target schema JSON path") Path schema;
+        @Option(names = "--mapping", required = true, description = "Mapping plan JSON path") Path mapping;
+        @Option(names = "--out", required = true, description = "Dry-run result JSON path") Path output;
+        @Option(names = "--delimiter", description = "One of comma, semicolon, tab or pipe") String delimiter;
+        @Option(names = "--charset", description = "CSV only: UTF-8, ISO-8859-1 or WINDOWS-1252") String charset;
+        @Option(names = "--header", defaultValue = "detect", description = "detect, first or none") String header;
+        @Option(names = "--sheet", description = "Excel only: exact worksheet name or zero-based index") String sheet;
+        @Option(names = "--formula", description = "Excel only: cached, expression or reject") String formula;
+        @Option(names = "--error-policy", defaultValue = "COLLECT_ERRORS",
+                description = "FAIL_FAST, SKIP_ROW or COLLECT_ERRORS") DryRunOptions.ErrorPolicy errorPolicy;
+        @Option(names = "--max-errors", defaultValue = "1000") long maxErrors;
+        @Option(names = "--max-issue-samples", defaultValue = "100") int maxIssueSamples;
+        @Option(names = "--max-issue-codes", defaultValue = "256") int maxIssueCodes;
+
+        @Override public Integer call() throws Exception {
+            requireRegularFile(source, "source"); requireRegularFile(schema, "schema");
+            requireRegularFile(mapping, "mapping");
+            if (sameFileOrPath(source, output) || sameFileOrPath(schema, output)
+                    || sameFileOrPath(mapping, output))
+                throw new IllegalArgumentException("--out must not overwrite an input");
+            MappingPlan plan;
+            try { plan = JsonSupport.MAPPER.readValue(mapping.toFile(), MappingPlan.class); }
+            catch (JsonProcessingException exception) { throw new IllegalArgumentException("invalid mapping plan JSON", exception); }
+            Map<String, String> readerOptions = readerOptions(header, charset, delimiter, sheet, formula);
+            DryRunResult result = engine().dryRun(new DryRunRequest(new PathTabularSource(source),
+                    JsonSupport.readSchema(schema), plan, new AnalysisOptions(readerOptions, 42L),
+                    new DryRunOptions(errorPolicy, maxErrors, maxIssueSamples, maxIssueCodes)));
+            writeAtomically(output, result);
+            return OK;
+        }
     }
 
     private static String safeMessage(Throwable exception) {
@@ -115,27 +198,13 @@ public final class RizomaCli implements Runnable {
             if (sameFileOrPath(source, report) || sameFileOrPath(schema, report)) {
                 throw new IllegalArgumentException("--out must not overwrite the source or schema");
             }
-            Map<String, String> options = new LinkedHashMap<>();
-            options.put("header", header);
-            if (charset != null) options.put("charset", charset);
-            if (delimiter != null) options.put("delimiter", namedDelimiter(delimiter));
-            if (sheet != null) options.put("sheet", sheet);
-            if (formula != null) options.put("formula", formula);
+            Map<String, String> options = readerOptions(header, charset, delimiter, sheet, formula);
             AnalysisResult result = engine().analyze(new AnalysisRequest(
                     new PathTabularSource(source), JsonSupport.readSchema(schema), new AnalysisOptions(options, 42L)));
             writeAtomically(report, result);
             return OK;
         }
 
-        private static String namedDelimiter(String value) {
-            return switch (value.toLowerCase(java.util.Locale.ROOT)) {
-                case "comma", "," -> ",";
-                case "semicolon", ";" -> ";";
-                case "tab", "\\t" -> "\\t";
-                case "pipe", "|" -> "|";
-                default -> throw new IllegalArgumentException("--delimiter must be comma, semicolon, tab or pipe");
-            };
-        }
     }
 
     @Command(name = "explain", mixinStandardHelpOptions = true,
@@ -236,7 +305,28 @@ public final class RizomaCli implements Runnable {
         return left.equals(right) || Files.exists(right) && Files.isSameFile(left, right);
     }
 
-    private static void writeAtomically(Path destination, AnalysisResult result) throws IOException {
+    private static Map<String, String> readerOptions(String header, String charset,
+            String delimiter, String sheet, String formula) {
+        Map<String, String> options = new LinkedHashMap<>();
+        options.put("header", header);
+        if (charset != null) options.put("charset", charset);
+        if (delimiter != null) options.put("delimiter", namedDelimiter(delimiter));
+        if (sheet != null) options.put("sheet", sheet);
+        if (formula != null) options.put("formula", formula);
+        return options;
+    }
+
+    private static String namedDelimiter(String value) {
+        return switch (value.toLowerCase(java.util.Locale.ROOT)) {
+            case "comma", "," -> ",";
+            case "semicolon", ";" -> ";";
+            case "tab", "\\t" -> "\\t";
+            case "pipe", "|" -> "|";
+            default -> throw new IllegalArgumentException("--delimiter must be comma, semicolon, tab or pipe");
+        };
+    }
+
+    private static void writeAtomically(Path destination, Object result) throws IOException {
         Path absolute = destination.toAbsolutePath().normalize();
         Path parent = absolute.getParent();
         if (parent != null) Files.createDirectories(parent);

@@ -1,0 +1,17 @@
+{
+  "formatVersion": "1.0",
+  "schemaId": "dry-run-customer",
+  "schemaVersion": "1",
+  "context": "synthetic dry-run fixture",
+  "locale": "pt-BR",
+  "fields": [
+    {"id": "customer.document", "displayName": "CPF", "aliases": ["Documento"], "physicalType": "TEXT", "semanticTypes": ["br:cpf"], "required": true},
+    {"id": "customer.email", "displayName": "Email", "aliases": [], "physicalType": "TEXT", "semanticTypes": ["core:email"], "required": true},
+    {"id": "customer.phone", "displayName": "Telefone", "aliases": [], "physicalType": "TEXT", "semanticTypes": ["br:phone"], "required": true},
+    {"id": "customer.postalCode", "displayName": "CEP", "aliases": [], "physicalType": "TEXT", "semanticTypes": ["br:cep"], "required": true},
+    {"id": "customer.birthDate", "displayName": "Nascimento", "aliases": [], "physicalType": "DATE", "semanticTypes": ["core:date"], "required": true},
+    {"id": "customer.amount", "displayName": "Valor", "aliases": [], "physicalType": "DECIMAL", "semanticTypes": [], "required": true},
+    {"id": "customer.active", "displayName": "Ativo", "aliases": [], "physicalType": "BOOLEAN", "semanticTypes": [], "required": true},
+    {"id": "customer.code", "displayName": "Codigo", "aliases": [], "physicalType": "TEXT", "semanticTypes": [], "required": true}
+  ]
+}

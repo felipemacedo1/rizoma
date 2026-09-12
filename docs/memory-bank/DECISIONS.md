@@ -144,3 +144,21 @@ O corpus sintetico passa a ser o gate objetivo de ranking e abstencao. JMH foi
 adiado: corpus e volume ja respondem as decisoes atuais, enquanto o subscore
 ainda pode mudar. O bloqueio remoto de billing e pendencia operacional e nao
 impede desenvolvimento local verificado.
+
+## 2026-09-11 - Plano e dry run sem destino no 0.3
+
+`MappingPlan` 1.0 nasce experimental e exige mappings explicitamente
+confirmados. Ele carrega identidades/fingerprints de fonte, schema e
+configuracao, incluindo o registro de transformers/validators. Dry run rejeita
+divergencias e planos que deixem campo required sem mapping.
+
+O pipeline de transformacao e validacao pertence ao core e trabalha por linha;
+o relatorio retem somente contagens e amostras mascaradas limitadas. A API de
+dry run nao recebe sink. Uma porta de destino nao foi criada no 0.3 para tornar
+a ausencia de escrita uma propriedade estrutural, nao uma convencao.
+
+Transformers e validators usam IDs/versoes explicitos. Erro de dado e resultado
+tipado; excecao indica configuracao ou execucao invalida. Datas e decimais
+exigem contexto suficiente, e identificadores TEXT nunca sofrem conversao
+numerica implicita. Unique/FK e CNPJ permanecem ausentes ate existir contrato
+correto e custo controlado.

@@ -687,32 +687,35 @@ depois; JDBC/serviço somente sob demanda. O core funciona sem persistência.
 ## 18. Transformação, validação, dry run e migração
 
 ```text
-raw CellValue -> normalize -> ValueTransformer(s)
-              -> Validator(s) -> RowValidationResult
-              -> dry-run counters OR MigrationSink batch
+raw CellValue -> ValueTransformer(s) -> Validator(s)
+              -> RowExecutionResult -> bounded dry-run counters
 ```
 
-Transformações básicas incluem texto para data, inteiro, `BigDecimal`, booleano
-e normalizações CPF/CNPJ/telefone/CEP. Resultados tipados registram erros e
-conversões com perda. Políticas: `FAIL_FAST`, `SKIP_ROW`, `COLLECT_ERRORS`, com
-limite máximo de erros.
+O 0.3 implementa texto normalizado, inteiro, long, `BigDecimal`, `LocalDate`,
+booleano e formas canonicas de CPF/telefone/CEP. CNPJ permanece fora porque seu
+contrato alfanumerico nao pode perder letras. Resultados tipados preservam o
+original apenas transitoriamente e registram falha, ambiguidade e conversao com
+perda. Policies: `FAIL_FAST`, `SKIP_ROW`, `COLLECT_ERRORS`, com limite maximo de
+erros, exemplos e codigos distintos.
 
-Validadores cobrem required, regex, range, enum, unicidade, foreign key por
-porta e regra customizada. Unique/FK globais declaram custo e consistência; não
-usam `Set` ilimitado escondido.
+O 0.3 implementa required, regex, length, enum, CPF checksum e ranges numerico
+e de data. Unique/FK permanecem planejados; nao existe porta vazia nem `Set`
+ilimitado escondido.
 
-Dry run reabre a fonte e percorre o mesmo caminho de transformação/validação,
-mas usa `NoWriteExecutionMode`, nunca um sink descartável. O relatório inclui
-processadas, válidas, inválidas, warnings, erros e exemplos mascarados.
+Dry run reabre a fonte e percorre o pipeline de transformacao/validacao que sera
+reutilizado por uma execucao futura. Sua API deliberadamente nao recebe
+`MigrationSink`, `NoWriteSink` ou destino descartavel; escrita e estruturalmente
+indisponivel no milestone. O relatorio inclui contagens processadas, validas,
+invalidas, warnings, erros por campo/codigo e exemplos mascarados limitados.
 
-`MigrationSink` declara transação, rollback, idempotência, upsert e batch
-máximo. O engine não promete exactly-once genericamente. Falha parcial registra
-o último lote confirmado e estado terminal auditável.
+Portas de destino, transacao, rollback, idempotencia e batches serao avaliados
+em milestone posterior; nenhuma dessas capacidades e anunciada pelo 0.3.
 
-Um plano futuro de execução deve ficar vinculado ao fingerprint do conteúdo de
-origem, à versão/fingerprint do schema e à versão da configuração analisada.
-Alteração relevante invalida o plano ou exige nova análise. O 0.1a registra
-essas identidades em `AnalysisResult`, mas não implementa snapshot ou migração.
+`MappingPlan` 1.0 fica vinculado ao fingerprint do conteudo de origem, a
+versao/fingerprint do schema, ao fingerprint da configuracao e registro de
+regras, e a versao do motor. Alteracao relevante gera `INVALIDATE_PLAN` ou
+`REQUIRE_REANALYSIS`; campo required sem mapping gera `INCOMPLETE_PLAN`. Nao ha
+snapshot nem migracao.
 
 ## 19. Performance, streaming e sampling
 
@@ -927,7 +930,7 @@ uma acao externa separada e exige autorizacao explicita.
 | 0.1a | Vertical CSV com profiling, normalização, detectores, ranking e explain |
 | 0.1b | XLS/XLSX, segurança e paridade; prepara candidata a release 0.1 |
 | 0.2 | Metricas restantes, perfis avancados, anomalias e corpus rotulado |
-| 0.3 | Transformação, validação, dry run e sink de arquivo seguro |
+| 0.3 | Transformação, validação, MappingPlan e dry run sem qualquer sink |
 | 0.4 | Feedback e knowledge base em memória/arquivo |
 | 0.5 | Matching bipartido opt-in comparado ao ranking local |
 | 0.6 | SPI documentada, fontes sob demanda e adapters de observabilidade |

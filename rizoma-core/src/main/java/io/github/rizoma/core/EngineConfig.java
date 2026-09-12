@@ -51,7 +51,7 @@ public record EngineConfig(String version, EngineLimits limits, Map<String, Doub
     }
 
     public static EngineConfig defaults() {
-        return new EngineConfig("0.2-default", EngineLimits.defaults(), Map.of(
+        return new EngineConfig("0.3-default", EngineLimits.defaults(), Map.of(
                 "lexical", .30, "semantic", .30, "physicalType", .10,
                 "pattern", .15, "distribution", .05, "history", .10),
                 20, .90, .70, .50, .15, .60, false, 128, 32,
