@@ -26,5 +26,5 @@ jobs:
       - name: Execute documented quickstart
         if: matrix.java == '21'
         run: |
-          java -jar rizoma-cli/target/rizoma-cli-0.1.0-SNAPSHOT-all.jar analyze examples/clientes.csv --schema examples/customer.schema.json --out target/quickstart-report.json
-          java -jar rizoma-cli/target/rizoma-cli-0.1.0-SNAPSHOT-all.jar explain target/quickstart-report.json --column "CPF Cliente"
+          java -jar rizoma-cli/target/rizoma-cli-0.2.0-SNAPSHOT-all.jar analyze examples/clientes.csv --schema examples/customer.schema.json --out target/quickstart-report.json
+          java -jar rizoma-cli/target/rizoma-cli-0.2.0-SNAPSHOT-all.jar explain target/quickstart-report.json --column "CPF Cliente"

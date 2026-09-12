@@ -9,10 +9,12 @@ public record AnalysisResult(String formatVersion, String engineVersion, String 
         String schemaFingerprint, String configurationVersion, String configurationFingerprint,
         DataReader.SourceStructure structure, long rowsProcessed, List<ColumnProfile> profiles,
         Map<String, List<MappingCandidate>> candidatesByColumn,
+        Map<String, List<PrunedCandidate>> prunedCandidatesByColumn,
         Map<String, MappingDecision> decisionsByColumn, List<String> unmatchedColumns,
         List<String> conflicts, List<String> warnings, List<SafeError> errors) {
     public AnalysisResult {
         profiles = List.copyOf(profiles); candidatesByColumn = immutableLists(candidatesByColumn);
+        prunedCandidatesByColumn = immutableLists(prunedCandidatesByColumn == null ? Map.of() : prunedCandidatesByColumn);
         decisionsByColumn = Map.copyOf(decisionsByColumn); unmatchedColumns = List.copyOf(unmatchedColumns);
         conflicts = List.copyOf(conflicts); warnings = List.copyOf(warnings); errors = List.copyOf(errors);
     }
@@ -33,6 +35,8 @@ public record AnalysisResult(String formatVersion, String engineVersion, String 
             List<ScoreComponent> components, List<String> contradictions) {
         public MappingCandidate { components = List.copyOf(components); contradictions = List.copyOf(contradictions); }
     }
+    /** Candidate excluded before expensive scoring, with a safe deterministic reason. */
+    public record PrunedCandidate(String targetFieldId, String reason) {}
     public record MappingDecision(String sourceColumnId, String targetFieldId, DecisionStatus status,
             double score, double coverage, Double margin, double confidenceIndex,
             List<String> reasons, List<String> blockers) {

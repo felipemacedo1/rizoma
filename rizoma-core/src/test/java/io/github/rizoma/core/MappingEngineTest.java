@@ -60,6 +60,10 @@ class MappingEngineTest {
         assertEquals(1, result.candidatesByColumn().get("c0").size());
         assertTrue(Double.isFinite(decision.score()));
         assertTrue(result.profiles().getFirst().protectedSamples().isEmpty());
+        assertEquals(0, result.profiles().getFirst().statistics().cardinality().value());
+        assertEquals(ColumnProfile.MeasureAccuracy.EXACT,
+                result.profiles().getFirst().statistics().cardinality().accuracy());
+        assertNull(result.profiles().getFirst().statistics().entropyBits());
     }
 
     @Test void equalCandidatesTieDeterministicallyAndExclusiveCollisionRequiresReview() {
@@ -183,6 +187,117 @@ class MappingEngineTest {
         assertFalse(result.candidatesByColumn().get("c0").getFirst().eligible());
         assertTrue(result.candidatesByColumn().get("c0").getFirst().components().stream()
                 .anyMatch(c -> "semantic".equals(c.id()) && !c.available()));
+    }
+
+    @Test void advancedProfileMeasuresEntropyNumericDistributionAndAnomaliesWithoutRawValues() {
+        var rows = new ArrayList<List<String>>();
+        for (int i = 1; i <= 20; i++) {
+            rows.add(List.of(i <= 10 ? "active" : "inactive", i == 20 ? "oops" : Integer.toString(i),
+                    i == 20 ? "SEM EMAIL" : "synthetic" + i + "@example.test"));
+        }
+        var reader = new MemoryReader(List.of("Status", "Quantidade", "Contato"), rows, new AtomicBoolean());
+        var schema = new TargetSchema("profile", "1", "", "pt-BR", List.of(
+                new TargetField("status", "Status", List.of(), PhysicalType.TEXT, Set.of(), false),
+                new TargetField("quantity", "Quantidade", List.of(), PhysicalType.INTEGER, Set.of(), false),
+                new TargetField("email", "Email", List.of("Contato"), PhysicalType.TEXT,
+                        Set.of(new SemanticType("core:email")), false)));
+
+        AnalysisResult result = MappingEngine.builder().readers(List.of(reader))
+                .semanticDetectors(CoreSemanticDetectors.defaults()).build()
+                .analyze(new AnalysisRequest(new MemorySource(), schema, null));
+
+        var status = result.profiles().get(0).statistics();
+        assertEquals(2, status.cardinality().value());
+        assertEquals(ColumnProfile.MeasureAccuracy.EXACT, status.cardinality().accuracy());
+        assertEquals(.1, status.uniqueRatio(), 1e-12);
+        assertEquals(1, status.entropyBits(), 1e-12);
+        assertEquals(ColumnProfile.MeasureAccuracy.EXACT, status.entropyAccuracy());
+        assertEquals(2, status.topValues().size());
+        assertTrue(status.topValues().stream().allMatch(item -> item.protectedValue().startsWith("<redacted:length=")));
+
+        var quantity = result.profiles().get(1).statistics();
+        assertEquals(19, quantity.numericSummary().count());
+        assertEquals(10, quantity.numericSummary().mean(), 1e-12);
+        assertEquals(30, quantity.numericSummary().variance(), 1e-12);
+        assertTrue(quantity.anomalies().stream().anyMatch(item ->
+                item.code().equals("PHYSICAL_TYPE_OUTLIER") && item.count() == 1));
+        assertTrue(quantity.anomalies().stream().anyMatch(item ->
+                item.code().equals("RARE_FORMAT") && item.count() == 1));
+
+        var contact = result.profiles().get(2).statistics();
+        assertEquals("core:email", contact.dominantSemanticType());
+        assertEquals(.95, contact.semanticValidRatio(), 1e-12);
+        assertEquals(.05, contact.semanticInvalidRatio(), 1e-12);
+        assertTrue(contact.anomalies().stream().anyMatch(item ->
+                item.code().equals("SEMANTIC_INVALID") && item.count() == 1));
+        assertTrue(contact.anomalies().stream().flatMap(item -> item.locations().stream())
+                .allMatch(location -> location.protectedValue().startsWith("<redacted:length=")));
+    }
+
+    @Test void singleValueProfileHasExactZeroEntropyAndUniqueRatioOne() {
+        var reader = new MemoryReader(List.of("Only"), List.of(List.of("00123"), List.of("")), new AtomicBoolean());
+        var result = MappingEngine.builder().readers(List.of(reader)).build().analyze(new AnalysisRequest(
+                new MemorySource(), new TargetSchema("single", "1", "", "", List.of(
+                        new TargetField("id", "Only", List.of(), PhysicalType.TEXT, Set.of(), false))), null));
+        var statistics = result.profiles().getFirst().statistics();
+        assertEquals(1, statistics.cardinality().value());
+        assertEquals(1, statistics.uniqueRatio());
+        assertEquals(0, statistics.entropyBits());
+        assertEquals(PhysicalType.TEXT, result.profiles().getFirst().inferredType());
+        assertTrue(statistics.anomalies().stream().anyMatch(item ->
+                item.code().equals("NULL_PRESENT") && item.count() == 1));
+    }
+
+    @Test void highCardinalitySwitchesToDeclaredBoundedEstimates() {
+        var rows = new ArrayList<List<String>>();
+        for (int i = 0; i < 100; i++) rows.add(List.of("synthetic-" + i));
+        var defaults = EngineConfig.defaults();
+        var limits = new EngineLimits(10_000, 200, 2, 100, 100, 2, 3, 10, 10,
+                Duration.ofSeconds(5), 3, 2, 5, 10);
+        var config = new EngineConfig("estimated", limits, defaults.weights(), 2,
+                .9, .7, .5, .15, .3, false);
+        var reader = new MemoryReader(List.of("Identifier"), rows, new AtomicBoolean());
+        var result = MappingEngine.builder().readers(List.of(reader)).configuration(config).build()
+                .analyze(new AnalysisRequest(new MemorySource(), new TargetSchema("high", "1", "", "", List.of(
+                        new TargetField("id", "Identifier", List.of(), PhysicalType.TEXT, Set.of(), false))), null));
+        var statistics = result.profiles().getFirst().statistics();
+        assertEquals(ColumnProfile.MeasureAccuracy.ESTIMATED, statistics.cardinality().accuracy());
+        assertEquals("HyperLogLog p=10, 1024 registers", statistics.cardinality().method());
+        assertEquals(HyperLogLogSketch.EXPECTED_RELATIVE_ERROR,
+                statistics.cardinality().expectedRelativeError(), 1e-12);
+        assertEquals(2, statistics.topValues().size());
+        assertTrue(statistics.topValues().stream()
+                .allMatch(item -> item.accuracy() == ColumnProfile.MeasureAccuracy.ESTIMATED));
+        assertEquals(ColumnProfile.MeasureAccuracy.ESTIMATED, statistics.entropyAccuracy());
+        assertNotNull(statistics.entropyErrorBound());
+    }
+
+    @Test void largeSchemaPruningIsBoundedExplainedAndNeverRemovesExactAlias() {
+        var defaults = EngineConfig.defaults();
+        var boundedLimits = new EngineLimits(10_000, 20, 10, 100, 100, 2, 3, 10, 10,
+                Duration.ofSeconds(5), 100, 3, 5, 2);
+        var config = new EngineConfig("pruning-test", boundedLimits, defaults.weights(), 2,
+                .9, .7, .5, .15, .3, false, 3, 1,
+                EngineConfig.LexicalStrategy.ENHANCED_0_2);
+        var fields = List.of(
+                new TargetField("a", "Other Alpha", List.of("Exact Other Alpha"), PhysicalType.TEXT, Set.of(), false),
+                new TargetField("b", "Other Beta", List.of("Exact Other Beta"), PhysicalType.TEXT, Set.of(), false),
+                new TargetField("c", "Other Gamma", List.of("Exact Other Gamma"), PhysicalType.TEXT, Set.of(), false),
+                new TargetField("d", "Other Delta", List.of("Exact Other Delta"), PhysicalType.TEXT, Set.of(), false),
+                new TargetField("exact", "Exact", List.of("Exact Alias"), PhysicalType.TEXT, Set.of(), false));
+        var reader = new MemoryReader(List.of("Exact Alias"), List.of(List.of("synthetic")), new AtomicBoolean());
+        AnalysisResult result = MappingEngine.builder().readers(List.of(reader)).configuration(config).build()
+                .analyze(new AnalysisRequest(new MemorySource(),
+                        new TargetSchema("large", "1", "", "", fields), null));
+
+        assertEquals("exact", result.candidatesByColumn().get("c0").getFirst().targetFieldId());
+        assertTrue(result.candidatesByColumn().get("c0").size() <= 2);
+        assertEquals(2, result.prunedCandidatesByColumn().get("c0").size());
+        assertTrue(result.prunedCandidatesByColumn().get("c0").stream()
+                .noneMatch(item -> item.targetFieldId().equals("exact")));
+        assertTrue(result.prunedCandidatesByColumn().get("c0").stream()
+                .allMatch(item -> !item.reason().isBlank()));
+        assertTrue(result.warnings().stream().anyMatch(item -> item.contains("retained 2 of 3")));
     }
 
     @Test void sourceMutationDuringAnalysisInvalidatesResult() {

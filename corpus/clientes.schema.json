@@ -1,0 +1,11 @@
+{
+  "formatVersion":"1.0","schemaId":"clientes-corpus","schemaVersion":"1","locale":"pt-BR",
+  "fields":[
+    {"id":"customer.name","displayName":"Nome","aliases":["Nome Completo"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"customer.document","displayName":"CPF","aliases":["Documento"],"physicalType":"TEXT","semanticTypes":["br:cpf"],"required":true},
+    {"id":"customer.phone","displayName":"Telefone","aliases":["Contato"],"physicalType":"TEXT","semanticTypes":["br:phone"],"required":false},
+    {"id":"customer.birthDate","displayName":"Data de Nascimento","aliases":["Data Nasc"],"physicalType":"DATE","semanticTypes":["core:date"],"required":false},
+    {"id":"customer.code","displayName":"Codigo Cliente","aliases":["Codigo"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"customer.email","displayName":"Email","aliases":[],"physicalType":"TEXT","semanticTypes":["core:email"],"required":false}
+  ]
+}

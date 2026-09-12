@@ -13,3 +13,6 @@ reservado `.test`.
 Contribuicoes devem manter essa regra: nao adicione dados pessoais, dumps,
 credenciais, tokens ou arquivos corporativos. Novas fixtures precisam ser
 pequenas, sinteticas, reproduziveis e ter a finalidade do caso de teste descrita.
+
+O corpus rotulado do milestone 0.2 segue a mesma politica e esta documentado em
+[`corpus/README.md`](../corpus/README.md).

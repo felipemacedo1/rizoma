@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.rizoma.core.AnalysisOptions;
 import io.github.rizoma.core.AnalysisRequest;
 import io.github.rizoma.core.AnalysisResult;
+import io.github.rizoma.core.ColumnProfile;
 import io.github.rizoma.core.CoreSemanticDetectors;
 import io.github.rizoma.core.EngineConfig;
 import io.github.rizoma.core.MappingEngine;
@@ -58,6 +59,7 @@ class RizomaCliTest {
         assertEquals(RizomaCli.OK, explainExit);
         assertTrue(explainOut.toString().contains("customer.document"));
         assertTrue(explainOut.toString().contains("lexical:"));
+        assertTrue(explainOut.toString().contains("Entropy role: auxiliary profiling evidence"));
         assertFalse(explainOut.toString().contains("529.982.247-25"));
 
         AnalysisResult library = libraryAnalyze(source, schemaPath);
@@ -65,26 +67,37 @@ class RizomaCliTest {
         assertEquals(library.decisionsByColumn(), cli.decisionsByColumn());
     }
 
-    @Test void explainRemainsCompatibleWithAnalysisReportVersionOneZero() throws Exception {
-        Path currentReport = temporary.resolve("report-1.1.json");
+    @Test void explainRemainsCompatibleWithAnalysisReportVersionsOneZeroAndOneOne() throws Exception {
+        Path currentReport = temporary.resolve("report-1.2.json");
         assertEquals(0, run("analyze", example("clientes.csv").toString(), "--schema",
                 example("customer.schema.json").toString(), "--out", currentReport.toString()));
 
-        ObjectNode legacy = (ObjectNode) JsonSupport.MAPPER.readTree(currentReport.toFile());
-        legacy.put("formatVersion", "1.0");
-        ((ObjectNode) legacy.get("structure")).remove("attributes");
-        Path legacyReport = temporary.resolve("report-1.0.json");
-        JsonSupport.MAPPER.writeValue(legacyReport.toFile(), legacy);
+        for (String version : List.of("1.0", "1.1")) {
+            ObjectNode legacy = (ObjectNode) JsonSupport.MAPPER.readTree(currentReport.toFile());
+            legacy.put("formatVersion", version);
+            legacy.remove("prunedCandidatesByColumn");
+            legacy.withArray("profiles").forEach(node -> {
+                ((ObjectNode) node).remove("statistics");
+                node.withObject("semanticEvidence").properties().forEach(entry ->
+                        ((ObjectNode) entry.getValue()).remove("semanticConfidence"));
+            });
+            if (version.equals("1.0")) ((ObjectNode) legacy.get("structure")).remove("attributes");
+            Path legacyReport = temporary.resolve("report-" + version + ".json");
+            JsonSupport.MAPPER.writeValue(legacyReport.toFile(), legacy);
 
-        var output = new StringWriter();
-        var error = new StringWriter();
-        int exit = RizomaCli.execute(new String[]{"explain", legacyReport.toString(), "--column-id", "c1"},
-                new PrintWriter(output, true), new PrintWriter(error, true));
+            var output = new StringWriter();
+            var error = new StringWriter();
+            int exit = RizomaCli.execute(new String[]{"explain", legacyReport.toString(), "--column-id", "c1"},
+                    new PrintWriter(output, true), new PrintWriter(error, true));
 
-        assertEquals(RizomaCli.OK, exit, error.toString());
-        assertTrue(output.toString().contains("customer.document"));
-        AnalysisResult parsed = JsonSupport.MAPPER.readValue(legacyReport.toFile(), AnalysisResult.class);
-        assertEquals(Map.of(), parsed.structure().attributes());
+            assertEquals(RizomaCli.OK, exit, error.toString());
+            assertTrue(output.toString().contains("customer.document"));
+            AnalysisResult parsed = JsonSupport.MAPPER.readValue(legacyReport.toFile(), AnalysisResult.class);
+            if (version.equals("1.0")) assertEquals(Map.of(), parsed.structure().attributes());
+            assertEquals(Map.of(), parsed.prunedCandidatesByColumn());
+            assertEquals(ColumnProfile.MeasureAccuracy.UNAVAILABLE,
+                    parsed.profiles().getFirst().statistics().cardinality().accuracy());
+        }
     }
 
     @Test void documentContentOutranksIncompatibleCandidateAndBareDigitsDoNotAutoMap() throws Exception {

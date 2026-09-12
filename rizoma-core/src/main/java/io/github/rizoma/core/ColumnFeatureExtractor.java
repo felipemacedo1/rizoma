@@ -2,7 +2,7 @@ package io.github.rizoma.core;
 
 import java.util.Objects;
 
-/** Minimal concrete feature extractor for 0.1a; no strategy interface is needed yet. */
+/** Minimal concrete feature extractor; no strategy interface is needed through 0.2. */
 public final class ColumnFeatureExtractor {
     private final HeaderNormalizer normalizer;
 

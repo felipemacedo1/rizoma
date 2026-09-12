@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** A destination field and only the metadata consumed by analysis 0.1a. */
+/** A destination field and only metadata consumed by analysis through 0.2. */
 public record TargetField(
         String id,
         String displayName,

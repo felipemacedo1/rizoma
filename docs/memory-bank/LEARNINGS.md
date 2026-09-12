@@ -33,3 +33,17 @@
 - Um CPF com checksum valido nao possui faixa reservada para testes. A fixture
   deve deixar origem sintetica explicita e nunca associar o numero a uma pessoa
   ou conta real.
+- Mais metricas lexicais nao melhoraram top-1 no primeiro corpus: o ganho
+  observado foi remover uma automacao ambigua e elevar abstencao de 6/7 para
+  7/7. Ablation e mais informativa que contar algoritmos.
+- Sem detector CNPJ e sem pista lexical, `Registro X` empresarial e confundido
+  com codigo. Preservar esse erro evita uma alegacao artificial de 100%.
+- Evidencia semantica positiva mas abaixo de 0,5 nao deve virar tipo dominante;
+  os detalhes continuam disponiveis para auditoria.
+- HyperLogLog p=10 custa 1.024 bytes por coluna e declara erro esperado de
+  aproximadamente 3,25%; a tabela exata precisa ser descartada ao exceder seu
+  limite para nao crescer silenciosamente.
+- Log de GC permite registrar maior heap observado antes de coleta, mas esse
+  valor nao equivale ao pico exato. RSS continua sendo memoria total do processo.
+- Shortlist limitada nao basta para memoria limitada: explicacoes dos candidatos
+  podados tambem precisam de teto e aviso quando forem truncadas.

@@ -1,0 +1,10 @@
+{
+  "formatVersion":"1.0","schemaId":"estoque-corpus","schemaVersion":"1","locale":"pt-BR",
+  "fields":[
+    {"id":"stock.sku","displayName":"SKU","aliases":["Ref"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"stock.description","displayName":"Descricao","aliases":["Item"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"stock.unit","displayName":"Unidade","aliases":["UM"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"stock.quantity","displayName":"Quantidade Estoque","aliases":["Saldo"],"physicalType":"INTEGER","semanticTypes":[],"required":true},
+    {"id":"stock.price","displayName":"Preco Unitario","aliases":["Preco Unit"],"physicalType":"DECIMAL","semanticTypes":[],"required":true}
+  ]
+}

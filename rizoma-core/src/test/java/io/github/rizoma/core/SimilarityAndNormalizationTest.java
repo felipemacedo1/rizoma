@@ -34,6 +34,52 @@ class SimilarityAndNormalizationTest {
         }
     }
 
+    @Test void jaccardHasKnownTokenSetValues() {
+        var metric = new JaccardSimilarity();
+        assertEquals("jaccard.tokens", metric.id());
+        assertEquals(1.0 / 3.0, metric.compare("data nasc", "data nascimento"), 1e-12);
+        assertEquals(1, metric.compare("", ""));
+        assertEquals(0, metric.compare("data", null));
+        assertEquals(1, metric.compare("data data", "data"));
+    }
+
+    @Test void jaroAndJaroWinklerMatchPublishedExamples() {
+        var jaro = new JaroSimilarity();
+        var winkler = new JaroWinklerSimilarity();
+        assertEquals(0.9444444444444445, jaro.compare("MARTHA", "MARHTA"), 1e-12);
+        assertEquals(0.9611111111111111, winkler.compare("MARTHA", "MARHTA"), 1e-12);
+        assertEquals(1, jaro.compare(null, ""));
+        assertEquals(0, winkler.compare("a", ""));
+    }
+
+    @Test void nGramAndCosineUseCharacterTrigramRepresentations() {
+        var ngram = new NGramSimilarity(3);
+        var cosine = new CosineSimilarity(3);
+        assertEquals(1, ngram.compare("nome", "nome"));
+        assertEquals(0, ngram.compare("abc", "xyz"));
+        assertEquals(1, cosine.compare("banana", "banana"), 1e-12);
+        assertEquals(0, cosine.compare("abc", "xyz"), 1e-12);
+        assertEquals(1, cosine.compare("", null), 1e-12);
+        assertThrows(IllegalArgumentException.class, () -> new NGramSimilarity(0));
+        assertThrows(IllegalArgumentException.class, () -> new CosineSimilarity(0));
+    }
+
+    @Test void allSimilarityMetricsAreSymmetricFiniteAndBounded() {
+        List<SimilarityMetric> metrics = List.of(new DiceSimilarity(), new LevenshteinSimilarity(),
+                new JaccardSimilarity(), new JaroSimilarity(), new JaroWinklerSimilarity(),
+                new NGramSimilarity(3), new CosineSimilarity(3));
+        Random random = new Random(17);
+        for (int attempt = 0; attempt < 2_000; attempt++) {
+            String left = randomString(random), right = randomString(random);
+            for (SimilarityMetric metric : metrics) {
+                double value = metric.compare(left, right);
+                assertTrue(Double.isFinite(value), metric.id());
+                assertTrue(value >= 0 && value <= 1, metric.id());
+                assertEquals(value, metric.compare(right, left), 1e-12, metric.id());
+            }
+        }
+    }
+
     @Test void headerNormalizationIsNonDestructiveIdempotentAndHandlesVariants() {
         var normalizer = new HeaderNormalizer(Map.of("dt", List.of("data"), "nasc", List.of("nascimento")));
         for (String value : List.of("Data Nasc.", "DATA_NASCIMENTO", "dtNascimento", "data-nascimento")) {

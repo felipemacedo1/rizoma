@@ -43,9 +43,28 @@ O roadmap detalhado e seus criterios de aceite ficam na
 - [ ] Reexecutar GitHub Actions apos resolver o bloqueio de cobranca.
 - [ ] Publicar release/tag/artefatos somente mediante autorizacao explicita.
 
+O bloqueio de billing e uma pendencia operacional conhecida e nao bloqueia os
+incrementos posteriores verificados localmente.
+
+## 0.2: entendimento e qualidade de mapping
+
+- [x] Jaccard, Jaro, Jaro-Winkler, trigrama e cosine com testes matematicos e
+  propriedades de simetria/limites.
+- [x] Subscore lexical correlacionado e modo baseline 0.1 para ablation.
+- [x] Cardinalidade exata limitada e HyperLogLog `p=10` estimado.
+- [x] Top-K Space-Saving, entropia, distribuicoes e Welford numerico.
+- [x] Anomalias deterministicas com localizacoes protegidas e colecoes limitadas.
+- [x] Semantic confidence separada de shape/validity/reliability.
+- [x] Pruning explicavel somente para schemas grandes, preservando alias exato.
+- [x] AnalysisResult JSON 1.2 e leitura retrocompativel 1.0/1.1.
+- [x] Corpus sintetico: cinco datasets, 28 colunas, 23 mappings rotulados.
+- [x] Baseline/ablation, matriz semantica e falhas preservadas.
+- [x] Volume de 1 milhao sob `-Xmx256m`: 36,46 s, RSS 172.172 KiB na execucao final.
+- [ ] JMH, adiado ate o subscore lexical estabilizar.
+
 ## Versoes seguintes
 
-- **0.2:** metricas restantes, profiling avancado, anomalias e corpus.
+- **0.2:** implementado localmente; aguarda apenas consolidacao do commit.
 - **0.3:** transformacao, validacao, dry run e sink seguro de referencia.
 - **0.4:** feedback e knowledge base.
 - **0.5:** matching global bipartido opt-in.

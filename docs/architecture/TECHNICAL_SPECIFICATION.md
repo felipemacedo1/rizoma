@@ -1,11 +1,11 @@
 # Rizoma — especificação técnica e arquitetura recomendada
 
-Status: **incrementos 0.1a e 0.1b implementados e verificados localmente; CI remoto pendente**
+Status: **milestone 0.2 implementado e verificado localmente; CI remoto e uma pendencia operacional**
 
 Data: 2026-09-10
 
-Estado do produto neste workspace: **incrementos 0.1a e 0.1b implementados e
-verificados localmente; release publica ainda nao criada**.
+Estado do produto neste workspace: **0.1a/0.1b consolidados e milestone 0.2
+implementado e verificado localmente; release publica ainda nao criada**.
 
 ## 1. Resumo executivo
 
@@ -24,7 +24,7 @@ estado global.
 |---|---|
 | Especificação, revisão crítica e arquitetura final | **IMPLEMENTADO** |
 | Decisões de Java, build, licença e primeiro incremento | **IMPLEMENTADO** |
-| Motor, CLI, readers CSV/XLS/XLSX e testes executáveis | **IMPLEMENTADO E VERIFICADO LOCALMENTE** |
+| Motor, CLI, readers CSV/XLS/XLSX, profiling 0.2 e avaliação | **IMPLEMENTADO E VERIFICADO LOCALMENTE** |
 | Teste de volume CSV com 1 milhão de registros | **IMPLEMENTADO E VERIFICADO LOCALMENTE** |
 | Microbenchmarks JMH | **PLANEJADO / NÃO IMPLEMENTADO** |
 | Persistência, REST, Spring, UI, ML e LLM | **PLANEJADO** |
@@ -228,7 +228,9 @@ classDiagram
 - `Row`: localização de registro/linha física e vetor posicional de strings no
   0.1a, evitando mapa por linha. `CellValue` tipado será introduzido somente
   quando outro formato exigir metadados próprios.
-- `ColumnProfile`: agregados, estimativas, amostras e metadados de precisão.
+- `ColumnProfile`: agregados, estimativas, amostras, anomalias protegidas e
+  metadados de precisao. O formato 1.2 adiciona `statistics` sem remover os
+  campos 1.0/1.1.
 - `ColumnFeatures`: projeção imutável e compacta consumida pelo matching.
 - `SemanticTypeId`: id aberto e namespaced (`core:email`, `br:cpf`), não enum.
 - `TargetSchema`/`TargetField`: id/versão/contexto/locale, nome, aliases, tipo
@@ -438,41 +440,46 @@ Stop words ficam desligadas por padrão: remover `cliente` pode apagar contexto.
 
 ## 12. Data profiling, features e anomalias
 
-`ColumnProfile` pode conter:
+No 0.2, `ColumnProfile` contem:
 
 - nome original, representações normalizadas e posição;
 - total, ausentes, inválidos e não vazios;
-- distintos/estimativa e razão de unicidade;
+- distintos exatos ate 1.024 valores ou HyperLogLog `p=10` depois do limite, e
+  razao de unicidade;
 - comprimentos mínimo, máximo, média e histograma limitado;
 - tipo físico por votos e razão de mistura;
 - média, variância/desvio incremental por Welford, mínimo e máximo;
-- quantis/mediana estimados quando houver sketch;
-- padrões e regex dominantes com contadores limitados;
-- top-K/frequency sketch, entropia e evidências semânticas;
+- quantis e mediana indisponiveis no 0.2; nenhum sketch de quantis foi adotado;
+- padroes dominantes em buckets fixos;
+- top-K exato ou Space-Saving com 10 contadores, entropia e evidencias
+  semanticas;
 - amostra representativa mascarada;
 - localizações limitadas de anomalias, mas contagem total;
 - accuracy, método, N e warnings por medida.
 
-`ColumnFeatures` leva somente dados necessários ao matching:
+`ColumnFeatures` leva somente os dados usados pelo matching 0.2:
 
 ```text
-normalizedName, nameTokens, aliases
-physicalTypeVotes, semanticEvidence
-lengthHistogram, numericSummary, nullRatio, uniqueRatio
-dominantPatterns, boundedTokenFrequency
-maskedSamples, sampleSize, evidenceReliability
+column identity, normalizedName, compactName, nameTokens
+inferredPhysicalType, observedValues, semanticEvidence
 ```
 
-No 0.1a, os detectores genéricos implementados são e-mail e data, além dos votos
+Cardinalidade, entropia, top-K, estatistica numerica e distribuicoes continuam
+no perfil e na explicacao, mas nao sao copiadas para features nem recebem score
+enquanto o destino nao fornecer uma distribuicao comparavel. Isso evita criar
+contribuicao artificial a partir de apenas um lado da comparacao.
+
+Os detectores genericos implementados sao e-mail e data, alem dos votos
 de tipo físico. O pack pt-BR implementa CPF com checksum e telefone
 conservador. CNPJ, CEP, UUID, URL, percentual, moeda e categorias como pessoa ou
 endereço permanecem planejados. CPF diferencia `shapeMatchRatio` de
 `checksumValidRatio`; onze dígitos sem formatação são ambíguos para telefone.
 
-Anomalias incluem tipo/padrão/comprimento raro, mistura de tipos, outlier
-robusto, nulidade/duplicidade incompatível, fórmula, conteúdo perigoso e linha
-irregular. O relatório guarda localização e valor mascarado; valor bruto exige
-opt-in explícito.
+O primeiro detector de anomalias cobre tipo fisico minoritario/misto, formato e
+comprimento raros, null presente, invalidade semantica e duplicidade sob forte
+evidencia de identidade. Localizacoes sao limitadas e mascaradas. Outlier
+robusto e quantis permanecem planejados; linha irregular e falha estrutural
+segura no reader em vez de produzir perfil parcial.
 
 ## 13. Feature extraction e candidate generation
 
@@ -487,6 +494,14 @@ Para esquemas pequenos, avaliam-se todos os `C*T` pares. Para esquemas grandes,
 
 Depois do profiling, a geração custa `O(C*T)` antes do custo das métricas e não
 depende do número de linhas.
+
+No 0.2, schemas com ate 128 campos continuam avaliando todos os pares. Acima
+desse limite, alias exato e sempre preservado e uma shortlist default de 32
+candidatos nao exatos usa tokens, tipo fisico especifico e semantica. Cada
+exclusao e registrada em `prunedCandidatesByColumn`; `UNMAPPED` permanece uma
+saida implicita e nunca e removido. Para preservar memoria limitada, o default
+retém no máximo 100 explicações individuais por coluna e um aviso registra
+retidas/total quando existe truncamento.
 
 ## 14. Similaridade e fundamentos matemáticos
 
@@ -544,10 +559,10 @@ JW = Jaro + l * p * (1-Jaro)
 `l` é o prefixo comum, limitado normalmente a 4, e `p <= 0,1`. Para
 `MARTHA/MARHTA`, Jaro é aproximadamente `0,944` e Jaro-Winkler `0,961`.
 Funcionam bem para transposições e pequenos typos; Winkler pode supervalorizar
-prefixos genéricos como `cliente_`. Na implementação direta que busca uma
-janela para cada caractere, o pior caso é `O(m*n)`. Como a métrica ainda não foi
-implementada, não se promete custo linear; documentação e benchmark deverão
-corresponder ao algoritmo concreto adotado na fase posterior.
+prefixos genéricos como `cliente_`. A implementacao direta do 0.2 busca uma
+janela para cada caractere: o pior caso e `O(m*n)` e a memoria e `O(m+n)`.
+Winkler limita o prefixo a quatro e so aplica boost quando Jaro e pelo menos
+0,7.
 
 ### 14.5 Cosine
 
@@ -558,14 +573,16 @@ cos(x,y) = (x · y) / (||x||2 * ||y||2)
 Com `x=(1,1,0)` e `y=(1,0,1)`, o produto é 1, ambas as normas são `sqrt(2)` e
 o resultado é `0,5`. É útil em frequências de tokens, n-gramas e distribuições;
 preserva frequência, mas ignora ordem. Termos comuns podem dominar sem
-ponderação. Vetor zero resulta em `UNAVAILABLE`, não em zero.
+ponderação. O 0.2 usa frequencias de trigramas com marcadores de borda. Na API
+numerica, vazio/vazio vale 1 e vazio contra nao vazio vale 0; o scorer marca
+header vazio como indisponivel antes de chamar a metrica.
 
 ### 14.6 N-gramas
 
 Bigramas de `nome` são `{no,om,me}`. Dice, Jaccard ou Cosine são aplicados às
 janelas. N-gramas toleram ruído local e custam `O(L)` para extração. `n` grande
-falha em strings curtas; `n` pequeno aumenta colisões. O baseline posterior usa
-trigramas com bordas somente quando houver comprimento suficiente.
+falha em strings curtas; `n` pequeno aumenta colisões. O 0.2 usa trigramas com
+marcadores de borda e trata uma string curta como uma unica unidade com borda.
 
 ### 14.7 Entropia
 
@@ -575,7 +592,9 @@ H(X) = -Σ p_i * log2(p_i)
 
 Frequências `(0,5; 0,25; 0,25)` produzem `1,5` bits. Baixa entropia sugere
 enum/booleano; alta entropia combinada a alta unicidade pode sugerir ID. Não
-detecta semântica isoladamente e será estimada em dados grandes.
+detecta semântica isoladamente. No 0.2 e exata enquanto a tabela de frequencia
+limitada e exata; depois e estimada pelo centro de limites inferior/superior e
+publica o semi-intervalo como erro.
 
 ### 14.8 Probabilidade e confidence
 
@@ -614,12 +633,15 @@ Renormalização evita punir score por evidência indisponível; `coverage` impe
 que um único sinal alto pareça suficiente. Métricas correlacionadas formam um
 subscore lexical em vez de votos independentes.
 
-No 0.1a, Dice e Levenshtein normalizado são agregados em um único componente
-lexical correlacionado. Distribuição e histórico aparecem como indisponíveis,
-com contribuição zero e motivo, nunca com valores sintéticos. A explicação
-lista as duas métricas, evidência semântica/shape, N, peso, confiabilidade,
-contribuição, limitações e versão de configuração. Métricas futuras não são
-listadas como se tivessem participado.
+No 0.2, o componente lexical continua sendo uma unica evidencia. Internamente,
+`tokenScore=(2*Dice+Jaccard)/3`,
+`editScore=(Levenshtein+Jaro+JaroWinkler)/3`,
+`gramScore=(trigramDice+trigramCosine)/2` e
+`lexical=0,40*tokenScore+0,35*editScore+0,25*gramScore`. Todas as metricas usam
+a mesma representacao destino; maximos de aliases diferentes nao sao
+misturados. O modo `BASELINE_0_1` preserva Dice/Levenshtein para ablation.
+Distribuicao de destino e historico permanecem indisponiveis, com contribuicao
+zero e motivo explicito.
 
 ### 15.2 Política de confiança
 
@@ -725,8 +747,9 @@ memória e computação cara, não I/O.
 
 Para grandes volumes:
 
-- cardinalidade migra para HyperLogLog/sketch após limite configurado;
-- frequências usam top-K/Space-Saving ou equivalente;
+- cardinalidade migra para HyperLogLog `p=10` apos 1.024 distintos, com erro
+  relativo esperado de aproximadamente 3,25%;
+- frequencias usam top-K/Space-Saving com capacidade default 10;
 - quantis usam sketch/t-digest quando introduzido e testado;
 - strings, exemplos e erros têm limites, preservando contagens totais;
 - segunda passagem ocorre apenas para dry run/import;
@@ -802,10 +825,10 @@ Qualidade do mapping mede accuracy top-1, recall top-3, precision do `AUTO_MAP`
 (prioritária), coverage por status, matriz de confusão semântica e calibration
 error quando aplicável.
 
-JMH medirá Dice, Jaccard, Levenshtein, Jaro/Winkler, cosine/n-gram, profiling,
-candidate generation e scoring. I/O end-to-end fica separado. Resultados
-registram hardware, JDK, GC, heap e forks. O módulo nasce só quando houver
-implementação mensurável.
+O corpus 0.2 mede 22/23 top-1, 23/23 top-3, 7/7 abstencoes e 5/5 no-match; a
+falha CNPJ sem pista lexical permanece registrada. JMH foi adiado ate o
+subscore estabilizar. Quando criado, medira algoritmos sem I/O e registrara
+hardware, JDK, GC, heap, forks, warmup e iteracoes.
 
 ## 23. Riscos técnicos
 
@@ -903,7 +926,7 @@ uma acao externa separada e exige autorizacao explicita.
 |---|---|
 | 0.1a | Vertical CSV com profiling, normalização, detectores, ranking e explain |
 | 0.1b | XLS/XLSX, segurança e paridade; prepara candidata a release 0.1 |
-| 0.2 | Métricas restantes, perfis avançados, anomalias, eventos e corpus |
+| 0.2 | Metricas restantes, perfis avancados, anomalias e corpus rotulado |
 | 0.3 | Transformação, validação, dry run e sink de arquivo seguro |
 | 0.4 | Feedback e knowledge base em memória/arquivo |
 | 0.5 | Matching bipartido opt-in comparado ao ranking local |
@@ -923,7 +946,8 @@ avaliação objetiva, política de privacidade e fallback determinístico.
 2. **Confidence numérica sem calibração:** score, coverage, margin e calibration
    são separados; heurística não é chamada de probabilidade.
 3. **Perfil completo versus heap limitado:** cada medida declara precisão e
-   medianas/distintos/frequências usam estimativas limitadas.
+   distintos/frequências usam estimativas limitadas; mediana e quantis ficam
+   indisponíveis até existir um sketch próprio testado.
 4. **Pipeline extenso versus interfaces inúteis:** etapas são responsabilidades;
    interface só onde há variação legítima.
 5. **Normalização versus auditoria:** original e regra/versão são preservados.
@@ -942,7 +966,7 @@ LLM. Cada um precisa de caso real e evidência.
 
 - qualidade da detecção de header/dialeto e regras semânticas;
 - paridade e consumo dos event models HSSF/XSSF;
-- escolha e erro dos sketches;
+- comportamento dos sketches em cardinalidades e distribuicoes externas;
 - pesos e thresholds após corpus rotulado;
 - limites seguros padrão;
 - custo de Unicode/métricas e benefício de pruning/concorrência.

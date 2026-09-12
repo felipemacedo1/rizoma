@@ -62,9 +62,9 @@ A decisao foi executada em 2026-09-11 com o texto oficial e `NOTICE` proprio.
 
 CNPJ pode conter letras significativas e nao sera normalizado como somente
 digitos. AnalysisResult registra fingerprints de origem, schema e configuracao
-para permitir invalidar planos futuros. Jaro/Jaro-Winkler permanece planejado e
-tera complexidade documentada conforme a implementacao real, incluindo pior
-caso da busca em janela.
+para permitir invalidar planos futuros. Naquele incremento, Jaro/Jaro-Winkler
+permaneceu planejado para o 0.2, com a exigencia de documentar a complexidade da
+implementacao real, incluindo o pior caso da busca em janela.
 
 ## 2026-09-11 - Contratos implementados no 0.1a
 
@@ -121,3 +121,26 @@ Documentos de contribuicao, conduta, seguranca e changelog passam a fazer parte
 do gate da primeira release. Como o reporte privado do GitHub esta desabilitado,
 `SECURITY.md` nao inventa um e-mail nem promete SLA; orienta contato privado do
 mantenedor e um fallback publico sem detalhes exploraveis.
+
+## 2026-09-11 - Profiling e avaliacao do 0.2
+
+O perfil guarda frequencias exatas ate 1.024 valores distintos. Apos o limite,
+cardinalidade usa HyperLogLog com `p=10` e erro relativo esperado de 3,25%;
+top-K usa Space-Saving default 10. Entropia e exata com a tabela completa e
+estimada por intervalo depois da transicao. Toda aproximacao declara
+`ESTIMATED`, metodo e erro; valores publicos continuam mascarados.
+
+Dice, Jaccard, Levenshtein, Jaro, Jaro-Winkler, trigram Dice e trigram cosine
+formam um unico subscore lexical em tres grupos correlacionados. O baseline
+Dice/Levenshtein 0.1 permanece selecionavel apenas para avaliacao reproduzivel.
+Pesos finais nao foram calibrados nem ajustados para eliminar a falha do corpus.
+
+Schemas com ate 128 campos avaliam todos os pares. Acima disso, pruning por
+alias/tokens/semantica/tipo mantem aliases exatos e 32 candidatos nao exatos,
+registrando ate 100 exclusoes por coluna e avisando o total quando truncado.
+Nao foi criado indice complexo ou matching global.
+
+O corpus sintetico passa a ser o gate objetivo de ranking e abstencao. JMH foi
+adiado: corpus e volume ja respondem as decisoes atuais, enquanto o subscore
+ainda pode mudar. O bloqueio remoto de billing e pendencia operacional e nao
+impede desenvolvimento local verificado.

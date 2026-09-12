@@ -1,0 +1,10 @@
+{
+  "formatVersion":"1.0","schemaId":"fornecedores-corpus","schemaVersion":"1","locale":"pt-BR",
+  "fields":[
+    {"id":"supplier.legalName","displayName":"Razao Social","aliases":["Razao"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"supplier.document","displayName":"Documento Empresarial","aliases":[],"physicalType":"TEXT","semanticTypes":["br:cnpj"],"required":true},
+    {"id":"supplier.code","displayName":"Codigo Fornecedor","aliases":["Cod"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"supplier.email","displayName":"Email Comercial","aliases":["Contato"],"physicalType":"TEXT","semanticTypes":["core:email"],"required":false},
+    {"id":"supplier.phone","displayName":"Telefone","aliases":[],"physicalType":"TEXT","semanticTypes":["br:phone"],"required":false}
+  ]
+}

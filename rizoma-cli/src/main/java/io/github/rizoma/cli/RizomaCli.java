@@ -32,7 +32,7 @@ import picocli.CommandLine.Spec;
 import picocli.CommandLine.Model.CommandSpec;
 
 /** Command-line adapter for Rizoma analysis reports. */
-@Command(name = "rizoma", mixinStandardHelpOptions = true, version = "rizoma 0.1.0-SNAPSHOT",
+@Command(name = "rizoma", mixinStandardHelpOptions = true, version = "rizoma 0.2.0-SNAPSHOT",
         description = "Explainable CSV/XLS/XLSX-to-schema analysis.",
         subcommands = {RizomaCli.Analyze.class, RizomaCli.Explain.class})
 public final class RizomaCli implements Runnable {
@@ -156,6 +156,8 @@ public final class RizomaCli implements Runnable {
             var column = result.structure().columns().stream().filter(item -> item.id().equals(id)).findFirst().orElseThrow();
             var decision = result.decisionsByColumn().get(id);
             var candidates = result.candidatesByColumn().getOrDefault(id, List.of());
+            var profile = result.profiles().stream().filter(item -> item.column().id().equals(id)).findFirst().orElseThrow();
+            var statistics = profile.statistics();
             PrintWriter writer = spec.commandLine().getOut();
             writer.printf("Column %s [id=%s, position=%d]%n", protectedHeader(column.header()), id, column.position());
             writer.printf("Decision: %s -> %s%n", decision.status(),
@@ -163,6 +165,25 @@ public final class RizomaCli implements Runnable {
             writer.printf("Score %.6f | coverage %.6f | margin %s | confidenceIndex %.6f | calibration %s%n",
                     decision.score(), decision.coverage(), decision.margin() == null ? "unavailable" : String.format(java.util.Locale.ROOT, "%.6f", decision.margin()),
                     decision.confidenceIndex(), result.calibration());
+            writer.printf("Profile: rows=%d nullRatio=%.6f cardinality=%d (%s) uniqueRatio=%.6f entropy=%s%n",
+                    profile.rowCount(), statistics.nullRatio(), statistics.cardinality().value(),
+                    statistics.cardinality().accuracy(), statistics.uniqueRatio(),
+                    statistics.entropyBits() == null ? "unavailable"
+                            : String.format(java.util.Locale.ROOT, "%.6f (%s)", statistics.entropyBits(),
+                                    statistics.entropyAccuracy()));
+            if (statistics.entropyBits() != null) {
+                writer.println("Entropy role: auxiliary profiling evidence; mapping contribution is unavailable "
+                        + "without a target distribution baseline");
+            }
+            if (!statistics.dominantSemanticType().isEmpty()) {
+                writer.printf("Semantic: %s confidenceIndex=%.6f validRatio=%.6f invalidRatio=%.6f%n",
+                        statistics.dominantSemanticType(), statistics.semanticConfidence(),
+                        statistics.semanticValidRatio(), statistics.semanticInvalidRatio());
+            }
+            if (!statistics.anomalies().isEmpty()) {
+                writer.println("Anomalies: " + statistics.anomalies().stream()
+                        .map(item -> item.code() + "=" + item.count()).collect(java.util.stream.Collectors.joining("; ")));
+            }
             if (!decision.blockers().isEmpty()) writer.println("Blockers: " + String.join("; ", decision.blockers()));
             for (int index = 0; index < candidates.size(); index++) {
                 var candidate = candidates.get(index);
@@ -173,13 +194,15 @@ public final class RizomaCli implements Runnable {
                         component.id(), component.available(), component.value(), component.weight(), component.reliability(),
                         component.contribution(), component.available() ? component.evidence() : component.unavailableReason()));
             }
+            List<AnalysisResult.PrunedCandidate> pruned = result.prunedCandidatesByColumn().getOrDefault(id, List.of());
+            if (!pruned.isEmpty()) writer.println("Pruned candidates: " + pruned.size() + " (reasons retained in JSON report)");
             return OK;
         }
 
         private static AnalysisResult readReport(Path report) throws IOException {
             try {
                 AnalysisResult result = JsonSupport.MAPPER.readValue(report.toFile(), AnalysisResult.class);
-                if (!List.of("1.0", "1.1").contains(result.formatVersion())) {
+                if (!List.of("1.0", "1.1", "1.2").contains(result.formatVersion())) {
                     throw new IllegalArgumentException("unsupported report formatVersion");
                 }
                 return result;

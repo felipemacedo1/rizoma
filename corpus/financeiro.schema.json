@@ -1,0 +1,9 @@
+{
+  "formatVersion":"1.0","schemaId":"financeiro-corpus","schemaVersion":"1","locale":"pt-BR",
+  "fields":[
+    {"id":"finance.document","displayName":"Documento Financeiro","aliases":["Documento"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"finance.dueDate","displayName":"Data Vencimento","aliases":["Vencto"],"physicalType":"DATE","semanticTypes":["core:date"],"required":true},
+    {"id":"finance.amount","displayName":"Valor","aliases":["Montante"],"physicalType":"DECIMAL","semanticTypes":[],"required":true},
+    {"id":"finance.status","displayName":"Status","aliases":["Situacao"],"physicalType":"TEXT","semanticTypes":[],"required":true}
+  ]
+}

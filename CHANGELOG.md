@@ -8,6 +8,13 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Milestone 0.2: Jaccard, Jaro, Jaro-Winkler, trigramas e cosine agrupados em
+  subscore lexical explicavel.
+- Profiling limitado com cardinalidade exata/HLL, Space-Saving, entropia,
+  distribuicoes, unique ratio e estatistica numerica incremental.
+- Anomalias deterministicas com contagens e localizacoes protegidas.
+- Corpus sintetico de cinco dominios, avaliacao, ablation e matriz semantica.
+- Relatorio JSON 1.2 com estatisticas e candidatos podados explicados.
 - API Java sem framework para analisar uma fonte tabular contra `TargetSchema`.
 - CLI `analyze` e `explain` com relatorio JSON estrito e explicavel.
 - Leitura CSV record-wise com deteccao limitada de delimitador e header.
@@ -34,7 +41,7 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 - Politicas de contribuicao, conduta e seguranca para a comunidade open source.
 - Proveniencia sintetica das fixtures e orientacao para dados de teste.
-- Contratos JSON 1.0/1.1, arquitetura, roadmap e estado de release documentados.
+- Contratos JSON 1.0/1.1/1.2, arquitetura, roadmap e estado de release documentados.
 
 ### Tests
 
@@ -44,9 +51,12 @@ projeto pretende usar [Semantic Versioning](https://semver.org/).
 
 ### Known limitations
 
-- A versao ainda e `0.1.0-SNAPSHOT`; nenhuma tag ou release foi publicada.
+- O desenvolvimento esta em `0.2.0-SNAPSHOT`; nenhuma tag ou release foi
+  publicada.
 - Score e `confidenceIndex` sao heuristicas `UNCALIBRATED`, nao probabilidades.
 - XLS legado e a tabela de shared strings XLSX nao possuem memoria O(1).
 - Transformacao, validacao de importacao, dry run, destino e matching global nao
   estao implementados.
 - O GitHub Actions permanece bloqueado por billing antes de executar os jobs.
+- O corpus atual e pequeno, nao calibrado e mantem uma falha de documento
+  empresarial sem detector CNPJ.

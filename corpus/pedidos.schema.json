@@ -1,0 +1,10 @@
+{
+  "formatVersion":"1.0","schemaId":"pedidos-corpus","schemaVersion":"1","locale":"pt-BR",
+  "fields":[
+    {"id":"order.code","displayName":"Codigo Pedido","aliases":["Pedido"],"physicalType":"TEXT","semanticTypes":[],"required":true},
+    {"id":"order.date","displayName":"Data Pedido","aliases":["Emissao"],"physicalType":"DATE","semanticTypes":["core:date"],"required":true},
+    {"id":"order.quantity","displayName":"Quantidade","aliases":["Qtd"],"physicalType":"INTEGER","semanticTypes":[],"required":true},
+    {"id":"order.amount","displayName":"Valor Total","aliases":["Total"],"physicalType":"DECIMAL","semanticTypes":[],"required":true},
+    {"id":"order.customerCode","displayName":"Codigo Cliente","aliases":["Comprador"],"physicalType":"TEXT","semanticTypes":[],"required":true}
+  ]
+}

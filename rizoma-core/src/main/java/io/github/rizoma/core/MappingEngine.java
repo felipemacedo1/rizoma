@@ -3,6 +3,7 @@ package io.github.rizoma.core;
 import io.github.rizoma.core.AnalysisResult.DecisionStatus;
 import io.github.rizoma.core.AnalysisResult.MappingCandidate;
 import io.github.rizoma.core.AnalysisResult.MappingDecision;
+import io.github.rizoma.core.AnalysisResult.PrunedCandidate;
 import io.github.rizoma.core.AnalysisResult.ScoreComponent;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -27,7 +28,7 @@ import java.util.Set;
  * and detectors may have their own thread-safety constraints.
  */
 public final class MappingEngine {
-    public static final String ENGINE_VERSION = "0.1.0-SNAPSHOT";
+    public static final String ENGINE_VERSION = "0.2.0-SNAPSHOT";
     private final List<DataReader> readers;
     private final List<SemanticDetector> detectors;
     private final EngineConfig config;
@@ -35,6 +36,11 @@ public final class MappingEngine {
     private final ColumnFeatureExtractor featureExtractor;
     private final SimilarityMetric dice = new DiceSimilarity();
     private final SimilarityMetric levenshtein = new LevenshteinSimilarity();
+    private final SimilarityMetric jaccard = new JaccardSimilarity();
+    private final SimilarityMetric jaro = new JaroSimilarity();
+    private final SimilarityMetric jaroWinkler = new JaroWinklerSimilarity();
+    private final SimilarityMetric ngram = new NGramSimilarity(3);
+    private final SimilarityMetric cosine = new CosineSimilarity(3);
 
     private MappingEngine(Builder builder) {
         readers = List.copyOf(builder.readers);
@@ -83,7 +89,9 @@ public final class MappingEngine {
                     if (rows > config.limits().maxRecords()) {
                         throw new EngineException("RECORD_LIMIT", "source exceeds configured record limit");
                     }
-                    for (int i = 0; i < accumulators.size(); i++) accumulators.get(i).accept(row.values().get(i));
+                    for (int i = 0; i < accumulators.size(); i++) {
+                        accumulators.get(i).accept(row.values().get(i), row.recordNumber(), row.physicalLine());
+                    }
                 }
                 warnings.addAll(dataset.warnings());
             }
@@ -113,6 +121,7 @@ public final class MappingEngine {
             long rows, List<ColumnProfile> profiles, List<String> warnings,
             String sourceFingerprint, String schemaFingerprint, String configFingerprint) {
         var allCandidates = new LinkedHashMap<String, List<MappingCandidate>>();
+        var allPruned = new LinkedHashMap<String, List<PrunedCandidate>>();
         var decisions = new LinkedHashMap<String, MappingDecision>();
         var unmatched = new ArrayList<String>();
         Map<String, TargetField> targets = new HashMap<>();
@@ -121,7 +130,13 @@ public final class MappingEngine {
         for (ColumnProfile profile : profiles) {
             ColumnFeatures features = featureExtractor.extract(profile);
             var candidates = new ArrayList<MappingCandidate>();
-            for (TargetField target : request.targetSchema().fields()) candidates.add(candidate(features, target));
+            CandidateGeneration generation = candidates(features, request.targetSchema().fields());
+            if (generation.totalPruned() > generation.pruned().size()) {
+                warnings.add("candidate pruning for source " + profile.column().id()
+                        + " retained " + generation.pruned().size() + " of "
+                        + generation.totalPruned() + " per-field explanations");
+            }
+            for (TargetField target : generation.retained()) candidates.add(candidate(features, target));
             candidates.sort(Comparator.comparing(MappingCandidate::eligible).reversed()
                     .thenComparing(Comparator.comparingDouble(MappingCandidate::score).reversed())
                     .thenComparing(MappingCandidate::targetFieldId));
@@ -132,6 +147,7 @@ public final class MappingEngine {
             if (decision.targetFieldId() == null) unmatched.add(profile.column().id());
             allCandidates.put(profile.column().id(), List.copyOf(candidates.subList(0,
                     Math.min(config.limits().maxCandidates(), candidates.size()))));
+            allPruned.put(profile.column().id(), generation.pruned());
         }
 
         var conflicts = detectConflicts(decisions, targets);
@@ -145,12 +161,69 @@ public final class MappingEngine {
             }
         }
 
-        return new AnalysisResult("1.1", ENGINE_VERSION, "UNCALIBRATED",
+        return new AnalysisResult("1.2", ENGINE_VERSION, "UNCALIBRATED",
                 request.source().id(), sourceFingerprint, request.targetSchema().id(),
                 request.targetSchema().version(), schemaFingerprint, config.version(), configFingerprint,
-                structure, rows, profiles, allCandidates, decisions, unmatched, conflicts,
+                structure, rows, profiles, allCandidates, allPruned, decisions, unmatched, conflicts,
                 limit(warnings, config.limits().maxWarnings()), limit(List.of(), config.limits().maxErrors()));
     }
+
+    private CandidateGeneration candidates(ColumnFeatures source, List<TargetField> targets) {
+        if (targets.size() <= config.candidatePruningThreshold() || source.compactName().isEmpty()) {
+            return new CandidateGeneration(targets, List.of(), 0);
+        }
+        var potentials = new ArrayList<PotentialTarget>();
+        var pruned = new ArrayList<PrunedCandidate>();
+        for (TargetField target : targets) {
+            var names = new ArrayList<String>();
+            names.add(target.displayName());
+            names.add(target.id());
+            names.addAll(target.aliases());
+            boolean exactAlias = names.stream().map(normalizer::normalize)
+                    .anyMatch(name -> name.compact().equals(source.compactName()));
+            double tokenOverlap = names.stream().map(normalizer::normalize)
+                    .mapToDouble(name -> jaccard.compare(source.normalizedName(), name.comparable()))
+                    .max().orElse(0);
+            double semantic = target.semanticTypes().stream()
+                    .map(type -> source.semanticEvidence().get(type.id())).filter(Objects::nonNull)
+                    .mapToDouble(SemanticDetector.SemanticEvidence::semanticConfidence).max().orElse(0);
+            boolean physical = target.physicalType() != PhysicalType.TEXT
+                    && target.physicalType() == source.inferredType();
+            boolean strongContradiction = source.semanticEvidence().values().stream()
+                    .anyMatch(item -> item.strongIdentity() && !target.semanticTypes().contains(item.type()));
+            double signal = .65 * tokenOverlap + .30 * semantic + (physical ? .05 : 0);
+            if (exactAlias || tokenOverlap > 0 || semantic > 0 || physical) {
+                potentials.add(new PotentialTarget(target, exactAlias, signal));
+            } else {
+                pruned.add(new PrunedCandidate(target.id(), strongContradiction
+                        ? "strong semantic incompatibility and no lexical/type support"
+                        : "no alias, token, semantic or specific physical-type support"));
+            }
+        }
+        potentials.sort(Comparator.comparing(PotentialTarget::exactAlias).reversed()
+                .thenComparing(Comparator.comparingDouble(PotentialTarget::signal).reversed())
+                .thenComparing(item -> item.target().id()));
+        var retained = new ArrayList<TargetField>();
+        int nonExactRetained = 0;
+        for (PotentialTarget potential : potentials) {
+            if (potential.exactAlias() || nonExactRetained < config.candidateShortlistSize()) {
+                retained.add(potential.target());
+                if (!potential.exactAlias()) nonExactRetained++;
+            } else {
+                pruned.add(new PrunedCandidate(potential.target().id(),
+                        "candidate fell below configured explainable shortlist"));
+            }
+        }
+        pruned.sort(Comparator.comparing(PrunedCandidate::targetFieldId));
+        int totalPruned = pruned.size();
+        int explanationLimit = config.limits().maxPrunedCandidateExplanations();
+        return new CandidateGeneration(List.copyOf(retained), List.copyOf(pruned.subList(0,
+                Math.min(explanationLimit, totalPruned))), totalPruned);
+    }
+
+    private record PotentialTarget(TargetField target, boolean exactAlias, double signal) {}
+    private record CandidateGeneration(List<TargetField> retained, List<PrunedCandidate> pruned,
+                                       int totalPruned) {}
 
     private MappingCandidate candidate(ColumnFeatures features, TargetField target) {
         var components = new ArrayList<ScoreComponent>();
@@ -196,17 +269,54 @@ public final class MappingEngine {
     private ScoreComponent lexical(ColumnFeatures features, TargetField target) {
         if (features.compactName().isEmpty()) return unavailable("lexical", "source header is empty");
         var names = new ArrayList<String>(); names.add(target.displayName()); names.add(target.id()); names.addAll(target.aliases());
-        double bestDice = 0, bestLevenshtein = 0;
+        if (config.lexicalStrategy() == EngineConfig.LexicalStrategy.BASELINE_0_1) {
+            double bestDice = 0;
+            double bestLevenshtein = 0;
+            for (String name : names) {
+                var normalized = normalizer.normalize(name);
+                bestDice = Math.max(bestDice, dice.compare(features.normalizedName(), normalized.comparable()));
+                bestLevenshtein = Math.max(bestLevenshtein,
+                        levenshtein.compare(features.compactName(), normalized.compact()));
+            }
+            return available("lexical", (bestDice + bestLevenshtein) / 2.0, 1.0,
+                    "baseline 0.1: max Dice=" + round(bestDice)
+                            + ", max normalized Levenshtein=" + round(bestLevenshtein),
+                    List.of("baseline retained only for reproducible evaluation"));
+        }
+        LexicalEvidence best = null;
         for (String name : names) {
             var normalized = normalizer.normalize(name);
-            bestDice = Math.max(bestDice, dice.compare(features.normalizedName(), normalized.comparable()));
-            bestLevenshtein = Math.max(bestLevenshtein, levenshtein.compare(features.compactName(), normalized.compact()));
+            double diceValue = dice.compare(features.normalizedName(), normalized.comparable());
+            double jaccardValue = jaccard.compare(features.normalizedName(), normalized.comparable());
+            double levenshteinValue = levenshtein.compare(features.compactName(), normalized.compact());
+            double jaroValue = jaro.compare(features.compactName(), normalized.compact());
+            double winklerValue = jaroWinkler.compare(features.compactName(), normalized.compact());
+            double ngramValue = ngram.compare(features.compactName(), normalized.compact());
+            double cosineValue = cosine.compare(features.compactName(), normalized.compact());
+            double tokenScore = (2 * diceValue + jaccardValue) / 3.0;
+            double editScore = (levenshteinValue + jaroValue + winklerValue) / 3.0;
+            double gramScore = (ngramValue + cosineValue) / 2.0;
+            double combined = .40 * tokenScore + .35 * editScore + .25 * gramScore;
+            var current = new LexicalEvidence(combined, diceValue, jaccardValue,
+                    levenshteinValue, jaroValue, winklerValue, ngramValue, cosineValue);
+            if (best == null || current.score() > best.score()) best = current;
         }
-        double value = (bestDice + bestLevenshtein) / 2.0;
-        return available("lexical", value, 1.0,
-                "max Dice=" + round(bestDice) + ", max normalized Levenshtein=" + round(bestLevenshtein),
-                List.of("Dice and Levenshtein form one correlated lexical subscore"));
+        Objects.requireNonNull(best);
+        return available("lexical", best.score(), 1.0,
+                "winning representation: Dice=" + round(best.dice())
+                        + ", Jaccard=" + round(best.jaccard())
+                        + ", normalized Levenshtein=" + round(best.levenshtein())
+                        + ", Jaro=" + round(best.jaro())
+                        + ", Jaro-Winkler=" + round(best.jaroWinkler())
+                        + ", trigram Dice=" + round(best.ngram())
+                        + ", trigram cosine=" + round(best.cosine()),
+                List.of("correlated metrics are grouped into token, edit and character-gram subscores",
+                        "only one target representation contributes; independent per-metric maxima are not combined"));
     }
+
+    private record LexicalEvidence(double score, double dice, double jaccard,
+                                   double levenshtein, double jaro, double jaroWinkler,
+                                   double ngram, double cosine) {}
 
     private ScoreComponent physical(ColumnFeatures features, TargetField target) {
         long observed = features.observedValues();
@@ -307,7 +417,9 @@ public final class MappingEngine {
         return config.version() + '|' + config.limits() + '|'
                 + new java.util.TreeMap<>(config.weights()) + '|' + config.minimumEvidenceValues() + '|'
                 + config.autoMapThreshold() + '|' + config.reviewThreshold() + '|' + config.lowThreshold() + '|'
-                + config.minimumMargin() + '|' + config.minimumCoverage() + '|' + config.autoMapEnabled();
+                + config.minimumMargin() + '|' + config.minimumCoverage() + '|' + config.autoMapEnabled() + '|'
+                + config.candidatePruningThreshold() + '|' + config.candidateShortlistSize() + '|'
+                + config.lexicalStrategy();
     }
     private static String fingerprint(String value) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
@@ -340,23 +452,70 @@ public final class MappingEngine {
         private final Random random;
         private final List<String> samples = new ArrayList<>();
         private final EnumMap<PhysicalType, Long> votes = new EnumMap<>(PhysicalType.class);
+        private final HyperLogLogSketch cardinality = new HyperLogLogSketch();
+        private final BoundedFrequencyTracker frequentValues;
+        private final Map<String, Long> exactFrequencies = new HashMap<>();
+        private final Map<String, Long> lengths = new LinkedHashMap<>();
+        private final Map<String, Long> patterns = new LinkedHashMap<>();
+        private final Map<String, ColumnProfile.AnomalyLocation> patternLocations = new HashMap<>();
+        private final Map<String, ColumnProfile.AnomalyLocation> lengthLocations = new HashMap<>();
+        private final Map<String, List<ColumnProfile.AnomalyLocation>> semanticInvalidLocations = new HashMap<>();
+        private final List<ColumnProfile.AnomalyLocation> nullLocations = new ArrayList<>();
+        private boolean exactFrequenciesComplete = true;
+        private long numericCount;
+        private double numericMean;
+        private double numericM2;
+        private double numericMinimum = Double.POSITIVE_INFINITY;
+        private double numericMaximum = Double.NEGATIVE_INFINITY;
         private long rows, nulls, lengthTotal; private int min = Integer.MAX_VALUE, max;
 
         ProfileAccumulator(DataReader.SourceColumn column, List<SemanticDetector> detectors,
                            EngineConfig config, long seed) {
             this.column = column; this.detectors = detectors; this.config = config; this.random = new Random(seed);
             this.semantic = detectors.stream().map(SemanticDetector::newAccumulator).toList();
+            this.frequentValues = new BoundedFrequencyTracker(config.limits().maxFrequentValues());
         }
 
-        void accept(String raw) {
+        void accept(String raw, long recordNumber, long physicalLine) {
             rows++;
             String value = raw == null ? "" : raw;
             if (value.length() > config.limits().maxFieldChars())
                 throw new EngineException("FIELD_LIMIT", "field exceeds configured character limit");
-            if (value.isBlank()) { nulls++; votes.merge(PhysicalType.EMPTY, 1L, Long::sum); return; }
+            if (value.isBlank()) {
+                nulls++;
+                votes.merge(PhysicalType.EMPTY, 1L, Long::sum);
+                if (nullLocations.size() < 3) {
+                    nullLocations.add(location(recordNumber, physicalLine, 0));
+                }
+                return;
+            }
             int length = value.length(); min = Math.min(min, length); max = Math.max(max, length); lengthTotal += length;
-            votes.merge(classify(value), 1L, Long::sum);
-            for (var accumulator : semantic) accumulator.accept(value);
+            PhysicalType physicalType = classify(value);
+            votes.merge(physicalType, 1L, Long::sum);
+            for (int i = 0; i < semantic.size(); i++) {
+                semantic.get(i).accept(value);
+                String type = detectors.get(i).type().id();
+                List<ColumnProfile.AnomalyLocation> locations = semanticInvalidLocations
+                        .computeIfAbsent(type, ignored -> new ArrayList<>());
+                if (locations.size() < 3) {
+                    SemanticDetector.ValueEvidence inspected = detectors.get(i).inspect(value);
+                    if (inspected.available() && !inspected.valid()) {
+                        locations.add(location(recordNumber, physicalLine, length));
+                    }
+                }
+            }
+            cardinality.add(value);
+            frequentValues.add(value);
+            trackExactFrequency(value);
+            String lengthBucket = lengthBucket(length);
+            lengths.merge(lengthBucket, 1L, Long::sum);
+            lengthLocations.putIfAbsent(lengthBucket, location(recordNumber, physicalLine, length));
+            String pattern = pattern(value);
+            patterns.merge(pattern, 1L, Long::sum);
+            patternLocations.putIfAbsent(pattern, location(recordNumber, physicalLine, length));
+            if (physicalType == PhysicalType.INTEGER || physicalType == PhysicalType.DECIMAL) {
+                acceptNumeric(value);
+            }
             String protectedValue = "<redacted:length=" + length + ">";
             int capacity = config.limits().maxSamples();
             if (capacity > 0) {
@@ -371,11 +530,225 @@ public final class MappingEngine {
                 var item = semantic.get(i).finish(config.minimumEvidenceValues()); evidence.put(item.type().id(), item);
             }
             long nonblank = rows - nulls;
+            var statistics = statistics(evidence, nonblank);
             return new ColumnProfile(column, rows, nulls, nonblank == 0 ? 0 : min, max,
                     nonblank == 0 ? 0 : (double) lengthTotal / nonblank, votes, inferred(votes), evidence,
                     samples, ColumnProfile.MeasureAccuracy.EXACT,
-                    "all records for counts/evidence; deterministic reservoir for protected samples");
+                    "all records for counts/evidence; deterministic reservoir for protected samples",
+                    statistics);
         }
+
+        private void trackExactFrequency(String value) {
+            if (!exactFrequenciesComplete) return;
+            Long count = exactFrequencies.get(value);
+            if (count != null) {
+                exactFrequencies.put(value, count + 1);
+            } else if (exactFrequencies.size() < config.limits().maxTrackedDistinctValues()) {
+                exactFrequencies.put(value, 1L);
+            } else {
+                exactFrequenciesComplete = false;
+                exactFrequencies.clear();
+            }
+        }
+
+        private void acceptNumeric(String raw) {
+            try {
+                double value = Double.parseDouble(raw.strip().replace(',', '.'));
+                if (!Double.isFinite(value)) return;
+                numericCount++;
+                double delta = value - numericMean;
+                numericMean += delta / numericCount;
+                numericM2 += delta * (value - numericMean);
+                numericMinimum = Math.min(numericMinimum, value);
+                numericMaximum = Math.max(numericMaximum, value);
+            } catch (NumberFormatException ignored) {
+                // The physical classifier is conservative; an unparseable value is not numeric evidence.
+            }
+        }
+
+        private ColumnProfile.ColumnStatistics statistics(
+                Map<String, SemanticDetector.SemanticEvidence> evidence, long nonblank) {
+            long distinct = exactFrequenciesComplete ? exactFrequencies.size() : cardinality.estimate();
+            distinct = Math.min(nonblank, distinct);
+            var cardinalityMeasure = new ColumnProfile.Cardinality(distinct,
+                    exactFrequenciesComplete ? ColumnProfile.MeasureAccuracy.EXACT
+                            : ColumnProfile.MeasureAccuracy.ESTIMATED,
+                    exactFrequenciesComplete ? "bounded exact frequency table" : "HyperLogLog p=10, 1024 registers",
+                    exactFrequenciesComplete ? null : HyperLogLogSketch.EXPECTED_RELATIVE_ERROR);
+            List<ColumnProfile.FrequentValue> topValues = topValues();
+            Entropy entropy = entropy(nonblank, distinct);
+            ColumnProfile.NumericSummary numeric = numericCount == 0 ? null : new ColumnProfile.NumericSummary(
+                    numericCount, numericMean, numericM2 / numericCount,
+                    Math.sqrt(numericM2 / numericCount), numericMinimum, numericMaximum,
+                    ColumnProfile.MeasureAccuracy.EXACT);
+            long dominantPhysical = votes.entrySet().stream().filter(entry -> entry.getKey() != PhysicalType.EMPTY)
+                    .mapToLong(Map.Entry::getValue).max().orElse(0);
+            double mixedRatio = nonblank == 0 ? 0 : 1.0 - (double) dominantPhysical / nonblank;
+            SemanticDetector.SemanticEvidence dominant = evidence.values().stream()
+                    .max(Comparator.comparingDouble(SemanticDetector.SemanticEvidence::semanticConfidence)
+                            .thenComparing(item -> item.type().id())).orElse(null);
+            String dominantType = dominant == null || dominant.semanticConfidence() < .5
+                    ? "" : dominant.type().id();
+            SemanticDetector.SemanticEvidence publishedDominant = dominantType.isEmpty() ? null : dominant;
+            double validRatio = publishedDominant == null ? 0 : publishedDominant.validityScore();
+            return new ColumnProfile.ColumnStatistics(cardinalityMeasure,
+                    nonblank == 0 ? 0 : (double) distinct / nonblank, topValues,
+                    entropy.value(), entropy.accuracy(), entropy.error(), numeric,
+                    new LinkedHashMap<>(lengths), new LinkedHashMap<>(patterns), mixedRatio,
+                    rows == 0 ? 0 : (double) nulls / rows, dominantType,
+                    publishedDominant == null ? 0 : publishedDominant.semanticConfidence(), validRatio,
+                    publishedDominant == null ? 0 : 1.0 - validRatio,
+                    anomalies(evidence, dominant, nonblank, distinct, mixedRatio));
+        }
+
+        private List<ColumnProfile.FrequentValue> topValues() {
+            List<BoundedFrequencyTracker.Entry> entries;
+            ColumnProfile.MeasureAccuracy accuracy;
+            if (exactFrequenciesComplete) {
+                entries = exactFrequencies.entrySet().stream()
+                        .sorted(Map.Entry.<String, Long>comparingByValue().reversed()
+                                .thenComparing(Map.Entry.comparingByKey()))
+                        .limit(config.limits().maxFrequentValues())
+                        .map(entry -> new BoundedFrequencyTracker.Entry(entry.getKey(), entry.getValue(), 0))
+                        .toList();
+                accuracy = ColumnProfile.MeasureAccuracy.EXACT;
+            } else {
+                entries = frequentValues.entries();
+                accuracy = ColumnProfile.MeasureAccuracy.ESTIMATED;
+            }
+            var result = new ArrayList<ColumnProfile.FrequentValue>();
+            for (int i = 0; i < entries.size(); i++) {
+                var entry = entries.get(i);
+                result.add(new ColumnProfile.FrequentValue(i + 1,
+                        "<redacted:length=" + entry.value().length() + ">",
+                        entry.count(), entry.error(), accuracy));
+            }
+            return List.copyOf(result);
+        }
+
+        private Entropy entropy(long nonblank, long distinct) {
+            if (nonblank == 0) return new Entropy(null, ColumnProfile.MeasureAccuracy.UNAVAILABLE, null);
+            if (exactFrequenciesComplete) {
+                double value = entropyOf(exactFrequencies.values(), nonblank);
+                return new Entropy(value, ColumnProfile.MeasureAccuracy.EXACT, 0.0);
+            }
+            List<BoundedFrequencyTracker.Entry> entries = frequentValues.entries();
+            var lowerCounts = entries.stream().map(entry -> Math.max(0L, entry.count() - entry.error())).toList();
+            long accounted = lowerCounts.stream().mapToLong(Long::longValue).sum();
+            long residual = Math.max(0, nonblank - accounted);
+            double lower = entropyOf(lowerCounts, nonblank) + entropyTerm(residual, nonblank);
+            long remainingCategories = Math.max(1, distinct - lowerCounts.stream().filter(value -> value > 0).count());
+            long quotient = residual / remainingCategories;
+            long remainder = residual % remainingCategories;
+            double upper = entropyOf(lowerCounts, nonblank)
+                    + remainder * entropyTerm(quotient + 1, nonblank)
+                    + (remainingCategories - remainder) * entropyTerm(quotient, nonblank);
+            if (upper < lower) upper = lower;
+            return new Entropy((lower + upper) / 2.0, ColumnProfile.MeasureAccuracy.ESTIMATED,
+                    (upper - lower) / 2.0);
+        }
+
+        private List<ColumnProfile.ColumnAnomaly> anomalies(
+                Map<String, SemanticDetector.SemanticEvidence> evidence,
+                SemanticDetector.SemanticEvidence dominant, long nonblank,
+                long distinct, double mixedRatio) {
+            var result = new ArrayList<ColumnProfile.ColumnAnomaly>();
+            if (nulls > 0 && nonblank > 0) {
+                result.add(anomaly("NULL_PRESENT", nulls, rows, ColumnProfile.MeasureAccuracy.EXACT,
+                        "blank values are present; target requiredness is evaluated separately", nullLocations));
+            }
+            long dominantCount = votes.entrySet().stream().filter(entry -> entry.getKey() != PhysicalType.EMPTY)
+                    .mapToLong(Map.Entry::getValue).max().orElse(0);
+            long physicalMinority = nonblank - dominantCount;
+            if (physicalMinority > 0) {
+                String code = (double) dominantCount / nonblank >= .8
+                        ? "PHYSICAL_TYPE_OUTLIER" : "MIXED_PHYSICAL_TYPES";
+                result.add(anomaly(code, physicalMinority, nonblank,
+                        ColumnProfile.MeasureAccuracy.EXACT,
+                        "minority values disagree with the dominant physical type", List.of()));
+            }
+            addRare(result, "RARE_FORMAT", patterns, patternLocations, nonblank);
+            addRare(result, "RARE_LENGTH", lengths, lengthLocations, nonblank);
+            if (dominant != null && dominant.semanticConfidence() >= .5
+                    && dominant.validMatches() < dominant.observed()) {
+                result.add(anomaly("SEMANTIC_INVALID", dominant.observed() - dominant.validMatches(),
+                        dominant.observed(), ColumnProfile.MeasureAccuracy.EXACT,
+                        "values fail dominant semantic type " + dominant.type().id(),
+                        semanticInvalidLocations.getOrDefault(dominant.type().id(), List.of())));
+            }
+            if (dominant != null && dominant.strongIdentity() && distinct < nonblank) {
+                result.add(anomaly("DUPLICATE_IDENTITY", nonblank - distinct, nonblank,
+                        exactFrequenciesComplete ? ColumnProfile.MeasureAccuracy.EXACT
+                                : ColumnProfile.MeasureAccuracy.ESTIMATED,
+                        "duplicate values occur in a column with strong identity evidence", List.of()));
+            }
+            if (mixedRatio > .2 && dominant != null && dominant.semanticConfidence() > 0) {
+                result.add(anomaly("SEMANTIC_MIXTURE", Math.round(mixedRatio * nonblank), nonblank,
+                        ColumnProfile.MeasureAccuracy.EXACT,
+                        "physical mixture limits semantic confidence", List.of()));
+            }
+            return List.copyOf(result.subList(0, Math.min(result.size(), config.limits().maxAnomalies())));
+        }
+
+        private void addRare(List<ColumnProfile.ColumnAnomaly> result, String code,
+                Map<String, Long> distribution,
+                Map<String, ColumnProfile.AnomalyLocation> locations, long nonblank) {
+            if (nonblank < 20 || distribution.size() < 2) return;
+            long dominant = distribution.values().stream().mapToLong(Long::longValue).max().orElse(0);
+            if ((double) dominant / nonblank < .8) return;
+            distribution.entrySet().stream().filter(entry -> (double) entry.getValue() / nonblank <= .05)
+                    .sorted(Map.Entry.comparingByKey()).forEach(entry -> result.add(anomaly(code,
+                            entry.getValue(), nonblank, ColumnProfile.MeasureAccuracy.EXACT,
+                            "rare bucket " + entry.getKey() + " differs from the dominant distribution",
+                            List.of(locations.get(entry.getKey())))));
+        }
+
+        private static ColumnProfile.ColumnAnomaly anomaly(String code, long count, long denominator,
+                ColumnProfile.MeasureAccuracy accuracy, String explanation,
+                List<ColumnProfile.AnomalyLocation> locations) {
+            return new ColumnProfile.ColumnAnomaly(code, count,
+                    denominator == 0 ? 0 : (double) count / denominator,
+                    accuracy, explanation, locations);
+        }
+
+        private static ColumnProfile.AnomalyLocation location(long record, long line, int length) {
+            return new ColumnProfile.AnomalyLocation(record, line, "<redacted:length=" + length + ">");
+        }
+
+        private static double entropyOf(Iterable<Long> counts, long total) {
+            double entropy = 0;
+            for (long count : counts) entropy += entropyTerm(count, total);
+            return entropy;
+        }
+
+        private static double entropyTerm(long count, long total) {
+            if (count <= 0 || total <= 0) return 0;
+            double probability = (double) count / total;
+            return -probability * (Math.log(probability) / Math.log(2));
+        }
+
+        private static String lengthBucket(int length) {
+            if (length <= 4) return "1-4";
+            if (length <= 8) return "5-8";
+            if (length <= 12) return "9-12";
+            if (length <= 20) return "13-20";
+            if (length <= 40) return "21-40";
+            if (length <= 80) return "41-80";
+            return "81+";
+        }
+
+        private static String pattern(String raw) {
+            String value = raw.strip();
+            if (value.matches("[^\\s@]+@[^\\s@]+")) return "EMAIL_LIKE";
+            if (value.matches("\\d{4}-\\d{2}-\\d{2}|\\d{2}/\\d{2}/\\d{4}")) return "DATE_LIKE";
+            if (value.matches("[-+]?\\d+")) return "INTEGER_LIKE";
+            if (value.matches("[-+]?\\d+[.,]\\d+")) return "DECIMAL_LIKE";
+            if (value.matches("[\\p{L}\\d_-]+")) return "ALPHANUMERIC";
+            if (value.matches("[\\p{L}\\s.'-]+")) return "TEXT_WORDS";
+            return "OTHER";
+        }
+
+        private record Entropy(Double value, ColumnProfile.MeasureAccuracy accuracy, Double error) {}
 
         private static PhysicalType classify(String raw) {
             String value = raw.strip();

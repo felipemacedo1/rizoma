@@ -14,7 +14,7 @@ public final class CoreSemanticDetectors {
     public static SemanticDetector email() {
         Pattern shape = Pattern.compile("^[^\\s@]+@[^\\s@]+$");
         Pattern valid = Pattern.compile("^[^\\s@]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
-        return counter(new SemanticType("core:email"), shape, valid, false, "email syntax");
+        return counter(new SemanticType("core:email"), shape, valid, true, "email syntax");
     }
 
     public static SemanticDetector date() { return new DateDetector(); }
@@ -23,6 +23,12 @@ public final class CoreSemanticDetectors {
                                             boolean strong, String explanation) {
         return new SemanticDetector() {
             @Override public SemanticType type() { return type; }
+            @Override public ValueEvidence inspect(String raw) {
+                if (raw == null || raw.isBlank()) return ValueEvidence.unavailable();
+                String value = raw.strip();
+                return new ValueEvidence(true, shape.matcher(value).matches(),
+                        valid.matcher(value).matches(), false);
+            }
             @Override public Accumulator newAccumulator() {
                 return new Accumulator() {
                     long observed, shaped, accepted;
@@ -46,6 +52,14 @@ public final class CoreSemanticDetectors {
         private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT);
         private static final DateTimeFormatter MDY = DateTimeFormatter.ofPattern("MM/dd/uuuu").withResolverStyle(ResolverStyle.STRICT);
         @Override public SemanticType type() { return new SemanticType("core:date"); }
+        @Override public ValueEvidence inspect(String raw) {
+            if (raw == null || raw.isBlank()) return ValueEvidence.unavailable();
+            String value = raw.strip();
+            boolean shaped = value.matches("\\d{4}-\\d{2}-\\d{2}|\\d{2}/\\d{2}/\\d{4}");
+            boolean iso = parses(value, ISO), dmy = parses(value, DMY), mdy = parses(value, MDY);
+            return new ValueEvidence(true, shaped, iso || dmy || mdy,
+                    dmy && mdy && !value.substring(0, 2).equals(value.substring(3, 5)));
+        }
         @Override public Accumulator newAccumulator() {
             return new Accumulator() {
                 long observed, shaped, valid, ambiguous;
@@ -75,7 +89,9 @@ public final class CoreSemanticDetectors {
         double validScore = observed == 0 ? 0 : (double) valid / observed;
         return new SemanticDetector.SemanticEvidence(type, observed, shape, valid, ambiguous,
                 shapeScore, validScore, SemanticDetector.reliability(observed, ambiguous, minimum),
-                strong && validScore >= .8, explanation);
+                strong && validScore >= .8
+                        && SemanticDetector.reliability(observed, ambiguous, minimum) >= .5,
+                explanation);
     }
 
     public static List<SemanticDetector> defaults() { return List.of(email(), date()); }

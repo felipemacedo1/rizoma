@@ -7,6 +7,14 @@ import io.github.rizoma.core.SemanticType;
 public final class BrazilianPhoneDetector implements SemanticDetector {
     private static final SemanticType TYPE = new SemanticType("br:phone");
     @Override public SemanticType type() { return TYPE; }
+    @Override public ValueEvidence inspect(String raw) {
+        if (raw == null || raw.isBlank()) return ValueEvidence.unavailable();
+        String value = raw.strip();
+        String digits = value.replaceAll("[^0-9]", "");
+        boolean shape = digits.matches("\\d{10,11}");
+        boolean valid = shape && Integer.parseInt(digits.substring(0, 2)) >= 11;
+        return new ValueEvidence(true, shape, valid, value.matches("\\d{11}"));
+    }
     @Override public Accumulator newAccumulator() {
         return new Accumulator() {
             long observed, shape, valid, ambiguous;
@@ -23,8 +31,10 @@ public final class BrazilianPhoneDetector implements SemanticDetector {
             @Override public SemanticEvidence finish(int minimum) {
                 double shapeScore = observed == 0 ? 0 : (double) shape / observed;
                 double validScore = observed == 0 ? 0 : (double) valid / observed;
+                double reliability = SemanticDetector.reliability(observed, ambiguous, minimum);
                 return new SemanticEvidence(TYPE, observed, shape, valid, ambiguous, shapeScore,
-                        validScore, SemanticDetector.reliability(observed, ambiguous, minimum), false,
+                        validScore, reliability,
+                        validScore >= .8 && reliability >= .5 && ambiguous == 0,
                         ambiguous > 0 ? "bare eleven-digit values are ambiguous" : "Brazilian phone shape");
             }
         };

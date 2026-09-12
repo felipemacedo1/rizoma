@@ -7,6 +7,13 @@ import io.github.rizoma.core.SemanticType;
 public final class CpfDetector implements SemanticDetector {
     private static final SemanticType TYPE = new SemanticType("br:cpf");
     @Override public SemanticType type() { return TYPE; }
+    @Override public ValueEvidence inspect(String raw) {
+        if (raw == null || raw.isBlank()) return ValueEvidence.unavailable();
+        String value = raw.strip();
+        boolean shape = value.matches("\\d{11}|\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}");
+        String digits = value.replaceAll("[.-]", "");
+        return new ValueEvidence(true, shape, digits.matches("\\d{11}") && checksumValid(digits), false);
+    }
     @Override public Accumulator newAccumulator() {
         return new Accumulator() {
             long observed, shape, valid;
