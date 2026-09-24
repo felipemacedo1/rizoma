@@ -13,6 +13,29 @@
   <description>Explainable intelligent data ingestion and mapping engine</description>
   <url>https://github.com/felipemacedo1/rizoma</url>
 
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>felipemacedo1</id>
+      <name>Felipe Macedo</name>
+      <url>https://github.com/felipemacedo1</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/felipemacedo1/rizoma.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/felipemacedo1/rizoma.git</developerConnection>
+    <url>https://github.com/felipemacedo1/rizoma</url>
+    <tag>HEAD</tag>
+  </scm>
+
   <modules>
     <module>rizoma-core</module>
     <module>rizoma-format-csv</module>
